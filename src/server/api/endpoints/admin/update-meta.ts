@@ -65,7 +65,121 @@ export const meta = {
 			desc: {
 				'ja-JP': '投稿の最大文字数'
 			}
-		}
+		},
+
+		localDriveCapacityMb: {
+			validator: $.num.optional.min(0),
+			desc: {
+				'ja-JP': 'ローカルユーザーひとりあたりのドライブ容量 (メガバイト単位)',
+				'en-US': 'Drive capacity of a local user (MB)'
+			}
+		},
+
+		remoteDriveCapacityMb: {
+			validator: $.num.optional.min(0),
+			desc: {
+				'ja-JP': 'リモートユーザーひとりあたりのドライブ容量 (メガバイト単位)',
+				'en-US': 'Drive capacity of a remote user (MB)'
+			}
+		},
+
+		cacheRemoteFiles: {
+			validator: $.bool.optional,
+			desc: {
+				'ja-JP': 'リモートのファイルをキャッシュするか否か'
+			}
+		},
+
+		enableRecaptcha: {
+			validator: $.bool.optional,
+			desc: {
+				'ja-JP': 'reCAPTCHAを使用するか否か'
+			}
+		},
+
+		recaptchaSiteKey: {
+			validator: $.str.optional.nullable,
+			desc: {
+				'ja-JP': 'reCAPTCHA site key'
+			}
+		},
+
+		recaptchaSecretKey: {
+			validator: $.str.optional.nullable,
+			desc: {
+				'ja-JP': 'reCAPTCHA secret key'
+			}
+		},
+
+		proxyAccount: {
+			validator: $.str.optional.nullable,
+			desc: {
+				'ja-JP': 'プロキシアカウントのユーザー名'
+			}
+		},
+
+		maintainerName: {
+			validator: $.str.optional,
+			desc: {
+				'ja-JP': 'インスタンスの管理者名'
+			}
+		},
+
+		maintainerEmail: {
+			validator: $.str.optional.nullable,
+			desc: {
+				'ja-JP': 'インスタンス管理者の連絡先メールアドレス'
+			}
+		},
+
+		langs: {
+			validator: $.arr($.str).optional,
+			desc: {
+				'ja-JP': 'インスタンスの対象言語'
+			}
+		},
+
+		enableTwitterIntegration: {
+			validator: $.bool.optional,
+			desc: {
+				'ja-JP': 'Twitter連携機能を有効にするか否か'
+			}
+		},
+
+		twitterConsumerKey: {
+			validator: $.str.optional.nullable,
+			desc: {
+				'ja-JP': 'TwitterアプリのConsumer key'
+			}
+		},
+
+		twitterConsumerSecret: {
+			validator: $.str.optional.nullable,
+			desc: {
+				'ja-JP': 'TwitterアプリのConsumer secret'
+			}
+		},
+
+		enableGithubIntegration: {
+			validator: $.bool.optional,
+			desc: {
+				'ja-JP': 'GitHub連携機能を有効にするか否か'
+			}
+		},
+
+		githubClientId: {
+			validator: $.str.optional.nullable,
+			desc: {
+				'ja-JP': 'GitHubアプリのClient ID'
+			}
+		},
+
+		githubClientSecret: {
+			validator: $.str.optional.nullable,
+			desc: {
+				'ja-JP': 'GitHubアプリのClient secret'
+			}
+		},
 	}
 };
 
@@ -102,6 +216,70 @@ export default define(meta, (ps) => new Promise(async (res, rej) => {
 
 	if (ps.maxNoteTextLength) {
 		set.maxNoteTextLength = ps.maxNoteTextLength;
+	}
+
+	if (ps.localDriveCapacityMb !== undefined) {
+		set.localDriveCapacityMb = ps.localDriveCapacityMb;
+	}
+
+	if (ps.remoteDriveCapacityMb !== undefined) {
+		set.remoteDriveCapacityMb = ps.remoteDriveCapacityMb;
+	}
+
+	if (ps.cacheRemoteFiles !== undefined) {
+		set.cacheRemoteFiles = ps.cacheRemoteFiles;
+	}
+
+	if (ps.enableRecaptcha !== undefined) {
+		set.enableRecaptcha = ps.enableRecaptcha;
+	}
+
+	if (ps.recaptchaSiteKey !== undefined) {
+		set.recaptchaSiteKey = ps.recaptchaSiteKey;
+	}
+
+	if (ps.recaptchaSecretKey !== undefined) {
+		set.recaptchaSecretKey = ps.recaptchaSecretKey;
+	}
+
+	if (ps.proxyAccount !== undefined) {
+		set.proxyAccount = ps.proxyAccount;
+	}
+
+	if (ps.maintainerName !== undefined) {
+		set['maintainer.name'] = ps.maintainerName;
+	}
+
+	if (ps.maintainerEmail !== undefined) {
+		set['maintainer.email'] = ps.maintainerEmail;
+	}
+
+	if (ps.langs !== undefined) {
+		set.langs = ps.langs;
+	}
+
+	if (ps.enableTwitterIntegration !== undefined) {
+		set.enableTwitterIntegration = ps.enableTwitterIntegration;
+	}
+
+	if (ps.twitterConsumerKey !== undefined) {
+		set.twitterConsumerKey = ps.twitterConsumerKey;
+	}
+
+	if (ps.twitterConsumerSecret !== undefined) {
+		set.twitterConsumerSecret = ps.twitterConsumerSecret;
+	}
+
+	if (ps.enableGithubIntegration !== undefined) {
+		set.enableGithubIntegration = ps.enableGithubIntegration;
+	}
+
+	if (ps.githubClientId !== undefined) {
+		set.githubClientId = ps.githubClientId;
+	}
+
+	if (ps.githubClientSecret !== undefined) {
+		set.githubClientSecret = ps.githubClientSecret;
 	}
 
 	await Meta.update({}, {

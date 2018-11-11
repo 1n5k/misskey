@@ -3,10 +3,10 @@
 	<table>
 		<thead>
 			<tr>
-				<th>%fa:exchange-alt% In/Out</th>
-				<th>%fa:server% Host</th>
-				<th>%fa:bolt% Activity</th>
-				<th>%fa:user% Actor</th>
+				<th><fa icon="exchange-alt"/> In/Out</th>
+				<th><fa icon="server"/> Host</th>
+				<th><fa icon="bolt"/> Activity</th>
+				<th><fa icon="user"/> Actor</th>
 			</tr>
 		</thead>
 		<tbody>
@@ -33,7 +33,7 @@ export default Vue.extend({
 	},
 
 	mounted() {
-		this.connection = (this as any).os.stream.useSharedConnection('apLog');
+		this.connection = this.$root.stream.useSharedConnection('apLog');
 		this.connection.on('log', this.onLog);
 		this.connection.on('logs', this.onLogs);
 		this.connection.send('requestLog', {

@@ -1,7 +1,7 @@
 <template>
 <x-column>
 	<span slot="header">
-		%fa:hashtag%<span>{{ tag }}</span>
+		<fa icon="hashtag"/><span>{{ tag }}</span>
 	</span>
 
 	<div class="xroyrflcmhhtmlwmyiwpfqiirqokfueb">
@@ -39,7 +39,7 @@ export default Vue.extend({
 	},
 
 	mounted() {
-		(this as any).api('charts/hashtag', {
+		this.$root.api('charts/hashtag', {
 			tag: this.tag,
 			span: 'hour',
 			limit: 24

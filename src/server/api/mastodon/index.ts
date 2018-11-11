@@ -2,10 +2,10 @@ import * as Router from 'koa-router';
 import User from '../../../models/user';
 import { toASCII } from 'punycode';
 import config from '../../../config';
-import Meta from '../../../models/meta';
 import { ObjectID } from 'bson';
 import Emoji from '../../../models/emoji';
 import { toMastodonEmojis } from './emoji';
+import fetchMeta from '../../../misc/fetch-meta';
 const pkg = require('../../../../package.json');
 
 // Init router
@@ -19,11 +19,8 @@ router.get('/v1/custom_emojis', async ctx => ctx.body =
 	})).map(x => toMastodonEmojis(x)));
 
 router.get('/v1/instance', async ctx => { // TODO: This is a temporary implementation. Consider creating helper methods!
-	const meta = await Meta.findOne() || {};
-	const { originalNotesCount, originalUsersCount } = meta.stats || {
-		originalNotesCount: 0,
-		originalUsersCount: 0
-	};
+	const meta = await fetchMeta();
+	const { originalNotesCount, originalUsersCount } = meta.stats;
 	const domains = await User.distinct('host', { host: { $ne: null } }) as any as [] || [];
 	const maintainer = await User.findOne({ isAdmin: true }) || {
 		_id: ObjectID.createFromTime(0),
@@ -51,7 +48,7 @@ router.get('/v1/instance', async ctx => { // TODO: This is a temporary implement
 		uri: config.hostname,
 		title: meta.name || 'Misskey',
 		description: meta.description || '',
-		email: config.maintainer.email || config.maintainer.url.startsWith('mailto:') ? config.maintainer.url.slice(7) : '',
+		email: meta.maintainer.email,
 		version: `0.0.0:compatible:misskey:${pkg.version}`, // TODO: How to tell about that this is an api for compatibility?
 		thumbnail: meta.bannerUrl,
 		/*
@@ -63,7 +60,7 @@ router.get('/v1/instance', async ctx => { // TODO: This is a temporary implement
 			status_count: originalNotesCount,
 			domain_count: domains.length
 		},
-		languages: config.languages || [ 'ja' ],
+		languages: meta.langs || [ 'ja' ],
 		contact_account: {
 			id: maintainer._id,
 			username: maintainer.username,

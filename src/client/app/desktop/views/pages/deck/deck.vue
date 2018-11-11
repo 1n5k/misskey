@@ -14,13 +14,14 @@
 			<x-note-column v-else-if="temporaryColumn.type == 'note'" :note-id="temporaryColumn.noteId" :key="temporaryColumn.noteId"/>
 			<x-hashtag-column v-else-if="temporaryColumn.type == 'tag'" :tag="temporaryColumn.tag" :key="temporaryColumn.tag"/>
 		</template>
-		<button ref="add" @click="add" title="%i18n:common.deck.add-column%">%fa:plus%</button>
+		<button ref="add" @click="add" :title="$t('@deck.add-column')"><fa icon="plus"/></button>
 	</div>
 </mk-ui>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../../i18n';
 import XColumnCore from './deck.column-core.vue';
 import Menu from '../../../../common/views/components/menu.vue';
 import MkUserListsWindow from '../../components/user-lists-window.vue';
@@ -31,6 +32,7 @@ import XHashtagColumn from './deck.hashtag-column.vue';
 import * as uuid from 'uuid';
 
 export default Vue.extend({
+	i18n: i18n('deck'),
 	components: {
 		XColumnCore,
 		XUserColumn,
@@ -129,7 +131,7 @@ export default Vue.extend({
 	},
 
 	mounted() {
-		document.title = (this as any).os.instanceName;
+		document.title = this.$root.instanceName;
 		document.documentElement.style.overflow = 'hidden';
 	},
 
@@ -178,12 +180,12 @@ export default Vue.extend({
 		},
 
 		add() {
-			this.os.new(Menu, {
+			this.$root.new(Menu, {
 				source: this.$refs.add,
 				compact: true,
 				items: [{
-					icon: '%fa:home%',
-					text: '%i18n:common.deck.home%',
+					icon: 'home',
+					text: this.$t('@deck.home'),
 					action: () => {
 						this.$store.dispatch('settings/addDeckColumn', {
 							id: uuid(),
@@ -191,8 +193,8 @@ export default Vue.extend({
 						});
 					}
 				}, {
-					icon: '%fa:comments R%',
-					text: '%i18n:common.deck.local%',
+					icon: ['far', 'comments'],
+					text: this.$t('@deck.local'),
 					action: () => {
 						this.$store.dispatch('settings/addDeckColumn', {
 							id: uuid(),
@@ -200,8 +202,8 @@ export default Vue.extend({
 						});
 					}
 				}, {
-					icon: '%fa:share-alt%',
-					text: '%i18n:common.deck.hybrid%',
+					icon: 'share-alt',
+					text: this.$t('@deck.hybrid'),
 					action: () => {
 						this.$store.dispatch('settings/addDeckColumn', {
 							id: uuid(),
@@ -209,8 +211,8 @@ export default Vue.extend({
 						});
 					}
 				}, {
-					icon: '%fa:globe%',
-					text: '%i18n:common.deck.global%',
+					icon: 'globe',
+					text: this.$t('@deck.global'),
 					action: () => {
 						this.$store.dispatch('settings/addDeckColumn', {
 							id: uuid(),
@@ -218,8 +220,8 @@ export default Vue.extend({
 						});
 					}
 				}, {
-					icon: '%fa:at%',
-					text: '%i18n:common.deck.mentions%',
+					icon: 'at',
+					text: this.$t('@deck.mentions'),
 					action: () => {
 						this.$store.dispatch('settings/addDeckColumn', {
 							id: uuid(),
@@ -227,8 +229,8 @@ export default Vue.extend({
 						});
 					}
 				}, {
-					icon: '%fa:envelope R%',
-					text: '%i18n:common.deck.direct%',
+					icon: ['far', 'envelope'],
+					text: this.$t('@deck.direct'),
 					action: () => {
 						this.$store.dispatch('settings/addDeckColumn', {
 							id: uuid(),
@@ -236,10 +238,10 @@ export default Vue.extend({
 						});
 					}
 				}, {
-					icon: '%fa:list%',
-					text: '%i18n:common.deck.list%',
+					icon: 'list',
+					text: this.$t('@deck.list'),
 					action: () => {
-						const w = (this as any).os.new(MkUserListsWindow);
+						const w = this.$root.new(MkUserListsWindow);
 						w.$once('choosen', list => {
 							this.$store.dispatch('settings/addDeckColumn', {
 								id: uuid(),
@@ -250,11 +252,11 @@ export default Vue.extend({
 						});
 					}
 				}, {
-					icon: '%fa:hashtag%',
-					text: '%i18n:common.deck.hashtag%',
+					icon: 'hashtag',
+					text: this.$t('@deck.hashtag'),
 					action: () => {
-						(this as any).apis.input({
-							title: '%i18n:@enter-hashtag-tl-title%'
+						this.$input({
+							title: this.$t('enter-hashtag-tl-title')
 						}).then(title => {
 							this.$store.dispatch('settings/addDeckColumn', {
 								id: uuid(),
@@ -264,8 +266,8 @@ export default Vue.extend({
 						});
 					}
 				}, {
-					icon: '%fa:bell R%',
-					text: '%i18n:common.deck.notifications%',
+					icon: ['far', 'bell'],
+					text: this.$t('@deck.notifications'),
 					action: () => {
 						this.$store.dispatch('settings/addDeckColumn', {
 							id: uuid(),
@@ -273,8 +275,8 @@ export default Vue.extend({
 						});
 					}
 				}, {
-					icon: '%fa:calculator%',
-					text: '%i18n:common.deck.widgets%',
+					icon: 'calculator',
+					text: this.$t('@deck.widgets'),
 					action: () => {
 						this.$store.dispatch('settings/addDeckColumn', {
 							id: uuid(),

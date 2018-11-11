@@ -2,14 +2,14 @@
 <div class="zyknedwtlthezamcjlolyusmipqmjgxz">
 	<div>
 		<header>
-			<span>%fa:microchip% CPU <span>{{ cpuP }}%</span></span>
+			<span><fa icon="microchip"/> CPU <span>{{ cpuP }}%</span></span>
 			<span v-if="meta">{{ meta.cpu.model }}</span>
 		</header>
 		<div ref="cpu"></div>
 	</div>
 	<div>
 		<header>
-			<span>%fa:memory% MEM <span>{{ memP }}%</span></span>
+			<span><fa icon="memory"/> MEM <span>{{ memP }}%</span></span>
 			<span v-if="meta"></span>
 		</header>
 		<div ref="mem"></div>
@@ -47,7 +47,7 @@ export default Vue.extend({
 	},
 
 	mounted() {
-		(this as any).os.getMeta().then(meta => {
+		this.$root.getMeta().then(meta => {
 			this.meta = meta;
 		});
 
@@ -117,6 +117,9 @@ export default Vue.extend({
 	beforeDestroy() {
 		this.connection.off('stats', this.onStats);
 		this.connection.off('statsLog', this.onStatsLog);
+
+		this.cpuChart.destroy();
+		this.memChart.destroy();
 	},
 
 	methods: {

@@ -1,9 +1,9 @@
 import $ from 'cafy';
 import * as os from 'os';
 import config from '../../../config';
-import Meta from '../../../models/meta';
 import Emoji from '../../../models/emoji';
 import define from '../define';
+import fetchMeta from '../../../misc/fetch-meta';
 
 const pkg = require('../../../../package.json');
 const client = require('../../../../built/client/meta.json');
@@ -27,7 +27,7 @@ export const meta = {
 };
 
 export default define(meta, (ps, me) => new Promise(async (res, rej) => {
-	const met: any = (await Meta.findOne()) || {};
+	const instance = await fetchMeta();
 
 	const emojis = await Emoji.find({ host: null }, {
 		fields: {
@@ -35,14 +35,15 @@ export default define(meta, (ps, me) => new Promise(async (res, rej) => {
 		}
 	});
 
-	res({
-		maintainer: config.maintainer,
+	const response: any = {
+		maintainer: instance.maintainer,
 
 		version: pkg.version,
 		clientVersion: client.version,
 
-		name: met.name || 'Misskey',
-		description: met.description,
+		name: instance.name,
+		description: instance.description,
+		langs: instance.langs,
 
 		secure: config.https != null,
 		machine: os.hostname(),
@@ -54,28 +55,46 @@ export default define(meta, (ps, me) => new Promise(async (res, rej) => {
 			cores: os.cpus().length
 		},
 
-		broadcasts: met.broadcasts || [],
-		disableRegistration: met.disableRegistration,
-		disableLocalTimeline: met.disableLocalTimeline,
-		driveCapacityPerLocalUserMb: config.localDriveCapacityMb,
-		recaptchaSitekey: config.recaptcha ? config.recaptcha.site_key : null,
+		broadcasts: instance.broadcasts || [],
+		disableRegistration: instance.disableRegistration,
+		disableLocalTimeline: instance.disableLocalTimeline,
+		driveCapacityPerLocalUserMb: instance.localDriveCapacityMb,
+		driveCapacityPerRemoteUserMb: instance.remoteDriveCapacityMb,
+		cacheRemoteFiles: instance.cacheRemoteFiles,
+		enableRecaptcha: instance.enableRecaptcha,
+		recaptchaSiteKey: instance.recaptchaSiteKey,
 		swPublickey: config.sw ? config.sw.public_key : null,
-		hidedTags: (me && me.isAdmin) ? met.hidedTags : undefined,
-		bannerUrl: met.bannerUrl,
-		maxNoteTextLength: met.maxNoteTextLength || 1000,
+		bannerUrl: instance.bannerUrl,
+		maxNoteTextLength: instance.maxNoteTextLength,
 
 		emojis: emojis,
+	};
 
-		features: ps.detail ? {
-			registration: !met.disableRegistration,
-			localTimeLine: !met.disableLocalTimeline,
+	if (ps.detail) {
+		response.features = {
+			registration: !instance.disableRegistration,
+			localTimeLine: !instance.disableLocalTimeline,
 			elasticsearch: config.elasticsearch ? true : false,
-			recaptcha: config.recaptcha ? true : false,
+			recaptcha: instance.enableRecaptcha,
 			objectStorage: config.drive && config.drive.storage === 'minio',
-			twitter: config.twitter ? true : false,
-			github: config.github ? true : false,
+			twitter: instance.enableTwitterIntegration,
+			github: instance.enableGithubIntegration,
 			serviceWorker: config.sw ? true : false,
 			userRecommendation: config.user_recommendation ? config.user_recommendation : {}
-		} : undefined
-	});
+		};
+	}
+
+	if (me && me.isAdmin) {
+		response.hidedTags = instance.hidedTags;
+		response.recaptchaSecretKey = instance.recaptchaSecretKey;
+		response.proxyAccount = instance.proxyAccount;
+		response.enableTwitterIntegration = instance.enableTwitterIntegration;
+		response.twitterConsumerKey = instance.twitterConsumerKey;
+		response.twitterConsumerSecret = instance.twitterConsumerSecret;
+		response.enableGithubIntegration = instance.enableGithubIntegration;
+		response.githubClientId = instance.githubClientId;
+		response.githubClientSecret = instance.githubClientSecret;
+	}
+
+	res(response);
 }));

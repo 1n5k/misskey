@@ -11,25 +11,27 @@
 		<template v-for="(notification, i) in _notifications">
 			<mk-notification :notification="notification" :key="notification.id"/>
 			<p class="date" :key="notification.id + '_date'" v-if="i != notifications.length - 1 && notification._date != _notifications[i + 1]._date">
-				<span>%fa:angle-up%{{ notification._datetext }}</span>
-				<span>%fa:angle-down%{{ _notifications[i + 1]._datetext }}</span>
+				<span><fa icon="angle-up"/>{{ notification._datetext }}</span>
+				<span><fa icon="angle-down"/>{{ _notifications[i + 1]._datetext }}</span>
 			</p>
 		</template>
 	</component>
 
 	<button class="more" v-if="moreNotifications" @click="fetchMoreNotifications" :disabled="fetchingMoreNotifications">
-		<template v-if="fetchingMoreNotifications">%fa:spinner .pulse .fw%</template>
-		{{ fetchingMoreNotifications ? '%i18n:common.loading%' : '%i18n:@more%' }}
+		<template v-if="fetchingMoreNotifications"><fa icon="spinner .pulse" fixed-width/></template>
+		{{ fetchingMoreNotifications ? $t('@.loading') : $t('@.load-more') }}
 	</button>
 
-	<p class="empty" v-if="notifications.length == 0 && !fetching">%i18n:@empty%</p>
+	<p class="empty" v-if="notifications.length == 0 && !fetching">{{ $t('empty') }}</p>
 </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 
 export default Vue.extend({
+	i18n: i18n('mobile/views/components/notifications.vue'),
 	data() {
 		return {
 			fetching: true,
@@ -46,7 +48,7 @@ export default Vue.extend({
 				const date = new Date(notification.createdAt).getDate();
 				const month = new Date(notification.createdAt).getMonth() + 1;
 				notification._date = date;
-				notification._datetext = '%i18n:common.month-and-day%'.replace('{month}', month.toString()).replace('{day}', date.toString());
+				notification._datetext = this.$t('@.month-and-day').replace('{month}', month.toString()).replace('{day}', date.toString());
 				return notification;
 			});
 		}
@@ -55,13 +57,13 @@ export default Vue.extend({
 	mounted() {
 		window.addEventListener('scroll', this.onScroll, { passive: true });
 
-		this.connection = (this as any).os.stream.useSharedConnection('main');
+		this.connection = this.$root.stream.useSharedConnection('main');
 
 		this.connection.on('notification', this.onNotification);
 
 		const max = 10;
 
-		(this as any).api('i/notifications', {
+		this.$root.api('i/notifications', {
 			limit: max + 1
 		}).then(notifications => {
 			if (notifications.length == max + 1) {
@@ -88,7 +90,7 @@ export default Vue.extend({
 
 			const max = 30;
 
-			(this as any).api('i/notifications', {
+			this.$root.api('i/notifications', {
 				limit: max + 1,
 				untilId: this.notifications[this.notifications.length - 1].id
 			}).then(notifications => {
@@ -105,7 +107,7 @@ export default Vue.extend({
 
 		onNotification(notification) {
 			// TODO: ユーザーが画面を見てないと思われるとき(ブラウザやタブがアクティブじゃないなど)は送信しない
-			(this as any).os.stream.send('readNotification', {
+			this.$root.stream.send('readNotification', {
 				id: notification.id
 			});
 
@@ -165,7 +167,7 @@ export default Vue.extend({
 			span
 				margin 0 16px
 
-			i
+			[data-icon]
 				margin-right 8px
 
 	> .more
@@ -175,7 +177,7 @@ export default Vue.extend({
 		color var(--text)
 		border-top solid 1px rgba(#000, 0.05)
 
-		> [data-fa]
+		> [data-icon]
 			margin-right 4px
 
 	> .empty

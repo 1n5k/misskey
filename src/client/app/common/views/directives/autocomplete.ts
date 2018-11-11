@@ -109,7 +109,7 @@ class Autocomplete {
 
 		if (isEmoji && opened == false) {
 			const emoji = text.substr(emojiIndex + 1);
-			if (emoji != '' && emoji.match(/^[\+\-a-z0-9_]+$/)) {
+			if (!emoji.includes(' ')) {
 				this.open('emoji', emoji);
 				opened = true;
 			}
@@ -145,6 +145,7 @@ class Autocomplete {
 		} else {
 			// サジェスト要素作成
 			this.suggestion = new MkAutocomplete({
+				parent: this.vm,
 				propsData: {
 					textarea: this.textarea,
 					complete: this.complete,

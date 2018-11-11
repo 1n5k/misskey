@@ -15,16 +15,16 @@
 	</div>
 	<div class="renote" v-if="isRenote">
 		<mk-avatar class="avatar" :user="note.user"/>
-		%fa:retweet%
-		<span>{{ '%i18n:@reposted-by%'.substr(0, '%i18n:@reposted-by%'.indexOf('{')) }}</span>
+		<fa icon="retweet"/>
+		<span>{{ this.$t('reposted-by').substr(0, this.$t('reposted-by').indexOf('{')) }}</span>
 		<router-link class="name" :to="note.user | userPage" v-user-preview="note.userId">{{ note.user | userName }}</router-link>
-		<span>{{ '%i18n:@reposted-by%'.substr('%i18n:@reposted-by%'.indexOf('}') + 1) }}</span>
+		<span>{{ this.$t('reposted-by').substr(this.$t('reposted-by').indexOf('}') + 1) }}</span>
 		<mk-time :time="note.createdAt"/>
 	</div>
 	<article>
 		<mk-avatar class="avatar" :user="appearNote.user"/>
 		<div class="main">
-			<mk-note-header class="header" :note="appearNote"/>
+			<mk-note-header class="header" :note="appearNote" :mini="mini"/>
 			<div class="body">
 				<p v-if="appearNote.cw != null" class="cw">
 					<span class="text" v-if="appearNote.cw != ''">{{ appearNote.cw }}</span>
@@ -32,8 +32,8 @@
 				</p>
 				<div class="content" v-show="appearNote.cw == null || showContent">
 					<div class="text">
-						<span v-if="appearNote.isHidden" style="opacity: 0.5">%i18n:@private%</span>
-						<a class="reply" v-if="appearNote.reply">%fa:reply%</a>
+						<span v-if="appearNote.isHidden" style="opacity: 0.5">{{ $t('private') }}</span>
+						<a class="reply" v-if="appearNote.reply"><fa icon="reply"/></a>
 						<misskey-flavored-markdown v-if="appearNote.text" :text="appearNote.text" :i="$store.state.i" :class="$style.text" :customEmojis="appearNote.emojis"/>
 						<a class="rp" v-if="appearNote.renote">RN:</a>
 					</div>
@@ -41,26 +41,27 @@
 						<mk-media-list :media-list="appearNote.files"/>
 					</div>
 					<mk-poll v-if="appearNote.poll" :note="appearNote" ref="pollViewer"/>
-					<a class="location" v-if="appearNote.geo" :href="`https://maps.google.com/maps?q=${appearNote.geo.coordinates[1]},${appearNote.geo.coordinates[0]}`" target="_blank">%fa:map-marker-alt% 位置情報</a>
+					<a class="location" v-if="appearNote.geo" :href="`https://maps.google.com/maps?q=${appearNote.geo.coordinates[1]},${appearNote.geo.coordinates[0]}`" target="_blank"><fa icon="map-marker-alt"/> 位置情報</a>
 					<div class="renote" v-if="appearNote.renote"><mk-note-preview :note="appearNote.renote" :mini="mini"/></div>
 					<mk-url-preview v-for="url in urls" :url="url" :key="url" :mini="mini"/>
 				</div>
 			</div>
 			<footer>
+				<span class="app" v-if="appearNote.app && mini && $store.state.settings.showVia">via <b>{{ appearNote.app.name }}</b></span>
 				<mk-reactions-viewer :note="appearNote" ref="reactionsViewer"/>
-				<button class="replyButton" @click="reply()" title="%i18n:@reply%">
-					<template v-if="appearNote.reply">%fa:reply-all%</template>
-					<template v-else>%fa:reply%</template>
+				<button class="replyButton" @click="reply()" :title="$t('reply')">
+					<template v-if="appearNote.reply"><fa icon="reply-all"/></template>
+					<template v-else><fa icon="reply"/></template>
 					<p class="count" v-if="appearNote.repliesCount > 0">{{ appearNote.repliesCount }}</p>
 				</button>
-				<button class="renoteButton" @click="renote()" title="%i18n:@renote%">
-					%fa:retweet%<p class="count" v-if="appearNote.renoteCount > 0">{{ appearNote.renoteCount }}</p>
+				<button class="renoteButton" @click="renote()" :title="$t('renote')">
+					<fa icon="retweet"/><p class="count" v-if="appearNote.renoteCount > 0">{{ appearNote.renoteCount }}</p>
 				</button>
-				<button class="reactionButton" :class="{ reacted: appearNote.myReaction != null }" @click="react()" ref="reactButton" title="%i18n:@add-reaction%">
-					%fa:plus%<p class="count" v-if="appearNote.reactions_count > 0">{{ appearNote.reactions_count }}</p>
+				<button class="reactionButton" :class="{ reacted: appearNote.myReaction != null }" @click="react()" ref="reactButton" :title="$t('add-reaction')">
+					<fa icon="plus"/><p class="count" v-if="appearNote.reactions_count > 0">{{ appearNote.reactions_count }}</p>
 				</button>
 				<button @click="menu()" ref="menuButton">
-					%fa:ellipsis-h%
+					<fa icon="ellipsis-h"/>
 				</button>
 			</footer>
 		</div>
@@ -73,12 +74,14 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 
 import XSub from './note.sub.vue';
 import noteMixin from '../../../common/scripts/note-mixin';
 import noteSubscriber from '../../../common/scripts/note-subscriber';
 
 export default Vue.extend({
+	i18n: i18n('desktop/views/components/note.vue'),
 	components: {
 		XSub
 	},
@@ -114,14 +117,14 @@ export default Vue.extend({
 
 	created() {
 		if (this.detail) {
-			(this as any).api('notes/replies', {
+			this.$root.api('notes/replies', {
 				noteId: this.appearNote.id,
 				limit: 8
 			}).then(replies => {
 				this.replies = replies;
 			});
 
-			(this as any).api('notes/conversation', {
+			this.$root.api('notes/conversation', {
 				noteId: this.appearNote.replyId
 			}).then(conversation => {
 				this.conversation = conversation.reverse();
@@ -190,7 +193,7 @@ export default Vue.extend({
 			margin 0 8px 0 0
 			border-radius 6px
 
-		[data-fa]
+		[data-icon]
 			margin-right 4px
 
 		> span
@@ -318,6 +321,12 @@ export default Vue.extend({
 							border-radius 8px
 
 			> footer
+				> .app
+					display block
+					margin-top 0.5em
+					margin-left 0.5em
+					color var(--noteHeaderInfo)
+					font-size 0.8em
 				> button
 					margin 0 28px 0 0
 					padding 0 8px

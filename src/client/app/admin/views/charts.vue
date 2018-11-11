@@ -1,36 +1,36 @@
 <template>
 <div class="qvgidhudpqhjttdhxubzuyrhyzgslujw">
 	<header>
-		<b>%fa:chart-bar R% %i18n:@title%:</b>
+		<b><fa :icon="['far', 'chart-bar']"/> {{ $t('title') }}:</b>
 		<select v-model="src">
-			<optgroup label="%i18n:@federation%">
-				<option value="federation-instances">%i18n:@charts.federation-instances%</option>
-				<option value="federation-instances-total">%i18n:@charts.federation-instances-total%</option>
+			<optgroup :label="$t('federation')">
+				<option value="federation-instances">{{ $t('charts.federation-instances') }}</option>
+				<option value="federation-instances-total">{{ $t('charts.federation-instances-total') }}</option>
 			</optgroup>
-			<optgroup label="%i18n:@users%">
-				<option value="users">%i18n:@charts.users%</option>
-				<option value="users-total">%i18n:@charts.users-total%</option>
+			<optgroup :label="$t('users')">
+				<option value="users">{{ $t('charts.users') }}</option>
+				<option value="users-total">{{ $t('charts.users-total') }}</option>
 			</optgroup>
-			<optgroup label="%i18n:@notes%">
-				<option value="notes">%i18n:@charts.notes%</option>
-				<option value="local-notes">%i18n:@charts.local-notes%</option>
-				<option value="remote-notes">%i18n:@charts.remote-notes%</option>
-				<option value="notes-total">%i18n:@charts.notes-total%</option>
+			<optgroup :label="$t('notes')">
+				<option value="notes">{{ $t('charts.notes') }}</option>
+				<option value="local-notes">{{ $t('charts.local-notes') }}</option>
+				<option value="remote-notes">{{ $t('charts.remote-notes') }}</option>
+				<option value="notes-total">{{ $t('charts.notes-total') }}</option>
 			</optgroup>
-			<optgroup label="%i18n:@drive%">
-				<option value="drive-files">%i18n:@charts.drive-files%</option>
-				<option value="drive-files-total">%i18n:@charts.drive-files-total%</option>
-				<option value="drive">%i18n:@charts.drive%</option>
-				<option value="drive-total">%i18n:@charts.drive-total%</option>
+			<optgroup :label="$t('drive')">
+				<option value="drive-files">{{ $t('charts.drive-files') }}</option>
+				<option value="drive-files-total">{{ $t('charts.drive-files-total') }}</option>
+				<option value="drive">{{ $t('charts.drive') }}</option>
+				<option value="drive-total">{{ $t('charts.drive-total') }}</option>
 			</optgroup>
-			<optgroup label="%i18n:@network%">
-				<option value="network-requests">%i18n:@charts.network-requests%</option>
-				<option value="network-time">%i18n:@charts.network-time%</option>
-				<option value="network-usage">%i18n:@charts.network-usage%</option>
+			<optgroup :label="$t('network')">
+				<option value="network-requests">{{ $t('charts.network-requests') }}</option>
+				<option value="network-time">{{ $t('charts.network-time') }}</option>
+				<option value="network-usage">{{ $t('charts.network-usage') }}</option>
 			</optgroup>
 		</select>
 		<div>
-			<span @click="span = 'day'" :class="{ active: span == 'day' }">%i18n:@per-day%</span> | <span @click="span = 'hour'" :class="{ active: span == 'hour' }">%i18n:@per-hour%</span>
+			<span @click="span = 'day'" :class="{ active: span == 'day' }">{{ $t('per-day') }}</span> | <span @click="span = 'hour'" :class="{ active: span == 'hour' }">{{ $t('per-hour') }}</span>
 		</div>
 	</header>
 	<div ref="chart"></div>
@@ -39,6 +39,7 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../i18n';
 import * as tinycolor from 'tinycolor2';
 import * as ApexCharts from 'apexcharts';
 
@@ -48,6 +49,7 @@ const sum = (...arr) => arr.reduce((r, a) => r.map((b, i) => a[i] + b));
 const negate = arr => arr.map(x => -x);
 
 export default Vue.extend({
+	i18n: i18n('admin/views/charts.vue'),
 	data() {
 		return {
 			chart: null,
@@ -103,17 +105,17 @@ export default Vue.extend({
 		this.now = new Date();
 
 		const [perHour, perDay] = await Promise.all([Promise.all([
-			(this as any).api('charts/federation', { limit: limit, span: 'hour' }),
-			(this as any).api('charts/users', { limit: limit, span: 'hour' }),
-			(this as any).api('charts/notes', { limit: limit, span: 'hour' }),
-			(this as any).api('charts/drive', { limit: limit, span: 'hour' }),
-			(this as any).api('charts/network', { limit: limit, span: 'hour' })
+			this.$root.api('charts/federation', { limit: limit, span: 'hour' }),
+			this.$root.api('charts/users', { limit: limit, span: 'hour' }),
+			this.$root.api('charts/notes', { limit: limit, span: 'hour' }),
+			this.$root.api('charts/drive', { limit: limit, span: 'hour' }),
+			this.$root.api('charts/network', { limit: limit, span: 'hour' })
 		]), Promise.all([
-			(this as any).api('charts/federation', { limit: limit, span: 'day' }),
-			(this as any).api('charts/users', { limit: limit, span: 'day' }),
-			(this as any).api('charts/notes', { limit: limit, span: 'day' }),
-			(this as any).api('charts/drive', { limit: limit, span: 'day' }),
-			(this as any).api('charts/network', { limit: limit, span: 'day' })
+			this.$root.api('charts/federation', { limit: limit, span: 'day' }),
+			this.$root.api('charts/users', { limit: limit, span: 'day' }),
+			this.$root.api('charts/notes', { limit: limit, span: 'day' }),
+			this.$root.api('charts/drive', { limit: limit, span: 'day' }),
+			this.$root.api('charts/network', { limit: limit, span: 'day' })
 		])]);
 
 		const chart = {
@@ -136,6 +138,10 @@ export default Vue.extend({
 		this.chart = chart;
 
 		this.render();
+	},
+
+	beforeDestroy() {
+		this.chartInstance.destroy();
 	},
 
 	methods: {
@@ -274,12 +280,15 @@ export default Vue.extend({
 			return {
 				series: [{
 					name: 'Combined',
+					type: 'line',
 					data: this.format(sum(this.stats.notes.local.total, this.stats.notes.remote.total))
 				}, {
 					name: 'Local',
+					type: 'area',
 					data: this.format(this.stats.notes.local.total)
 				}, {
 					name: 'Remote',
+					type: 'area',
 					data: this.format(this.stats.notes.remote.total)
 				}]
 			};
@@ -289,18 +298,21 @@ export default Vue.extend({
 			return {
 				series: [{
 					name: 'Combined',
+					type: 'line',
 					data: this.format(total
 						? sum(this.stats.users.local.total, this.stats.users.remote.total)
 						: sum(this.stats.users.local.inc, negate(this.stats.users.local.dec), this.stats.users.remote.inc, negate(this.stats.users.remote.dec))
 					)
 				}, {
 					name: 'Local',
+					type: 'area',
 					data: this.format(total
 						? this.stats.users.local.total
 						: sum(this.stats.users.local.inc, negate(this.stats.users.local.dec))
 					)
 				}, {
 					name: 'Remote',
+					type: 'area',
 					data: this.format(total
 						? this.stats.users.remote.total
 						: sum(this.stats.users.remote.inc, negate(this.stats.users.remote.dec))
@@ -314,6 +326,7 @@ export default Vue.extend({
 				bytes: true,
 				series: [{
 					name: 'All',
+					type: 'line',
 					data: this.format(
 						sum(
 							this.stats.drive.local.incSize,
@@ -324,15 +337,19 @@ export default Vue.extend({
 					)
 				}, {
 					name: 'Local +',
+					type: 'area',
 					data: this.format(this.stats.drive.local.incSize)
 				}, {
 					name: 'Local -',
+					type: 'area',
 					data: this.format(negate(this.stats.drive.local.decSize))
 				}, {
 					name: 'Remote +',
+					type: 'area',
 					data: this.format(this.stats.drive.remote.incSize)
 				}, {
 					name: 'Remote -',
+					type: 'area',
 					data: this.format(negate(this.stats.drive.remote.decSize))
 				}]
 			};
@@ -343,12 +360,15 @@ export default Vue.extend({
 				bytes: true,
 				series: [{
 					name: 'Combined',
+					type: 'line',
 					data: this.format(sum(this.stats.drive.local.totalSize, this.stats.drive.remote.totalSize))
 				}, {
 					name: 'Local',
+					type: 'area',
 					data: this.format(this.stats.drive.local.totalSize)
 				}, {
 					name: 'Remote',
+					type: 'area',
 					data: this.format(this.stats.drive.remote.totalSize)
 				}]
 			};
@@ -358,6 +378,7 @@ export default Vue.extend({
 			return {
 				series: [{
 					name: 'All',
+					type: 'line',
 					data: this.format(
 						sum(
 							this.stats.drive.local.incCount,
@@ -368,15 +389,19 @@ export default Vue.extend({
 					)
 				}, {
 					name: 'Local +',
+					type: 'area',
 					data: this.format(this.stats.drive.local.incCount)
 				}, {
 					name: 'Local -',
+					type: 'area',
 					data: this.format(negate(this.stats.drive.local.decCount))
 				}, {
 					name: 'Remote +',
+					type: 'area',
 					data: this.format(this.stats.drive.remote.incCount)
 				}, {
 					name: 'Remote -',
+					type: 'area',
 					data: this.format(negate(this.stats.drive.remote.decCount))
 				}]
 			};
@@ -386,12 +411,15 @@ export default Vue.extend({
 			return {
 				series: [{
 					name: 'Combined',
+					type: 'line',
 					data: this.format(sum(this.stats.drive.local.totalCount, this.stats.drive.remote.totalCount))
 				}, {
 					name: 'Local',
+					type: 'area',
 					data: this.format(this.stats.drive.local.totalCount)
 				}, {
 					name: 'Remote',
+					type: 'area',
 					data: this.format(this.stats.drive.remote.totalCount)
 				}]
 			};

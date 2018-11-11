@@ -10,26 +10,23 @@
 		</template>
 	</div>
 
-	<div v-if="!fetching && requestInitPromise != null">
-		<p>%i18n:@failed%</p>
-		<button @click="resolveInitPromise">%i18n:@retry%</button>
-	</div>
+	<mk-error v-if="!fetching && requestInitPromise != null" @retry="resolveInitPromise"/>
 
 	<!-- トランジションを有効にするとなぜかメモリリークする -->
 	<component :is="!$store.state.device.reduceMotion ? 'transition-group' : 'div'" name="mk-notes" class="transition" tag="div">
 		<template v-for="(note, i) in _notes">
 			<mk-note :note="note" :key="note.id" @update:note="onNoteUpdated(i, $event)"/>
 			<p class="date" :key="note.id + '_date'" v-if="i != notes.length - 1 && note._date != _notes[i + 1]._date">
-				<span>%fa:angle-up%{{ note._datetext }}</span>
-				<span>%fa:angle-down%{{ _notes[i + 1]._datetext }}</span>
+				<span><fa icon="angle-up"/>{{ note._datetext }}</span>
+				<span><fa icon="angle-down"/>{{ _notes[i + 1]._datetext }}</span>
 			</p>
 		</template>
 	</component>
 
 	<footer v-if="more">
 		<button @click="loadMore" :disabled="moreFetching" :style="{ cursor: moreFetching ? 'wait' : 'pointer' }">
-			<template v-if="!moreFetching">%i18n:@load-more%</template>
-			<template v-if="moreFetching">%fa:spinner .pulse .fw%</template>
+			<template v-if="!moreFetching">{{ $t('@.load-more') }}</template>
+			<template v-if="moreFetching"><fa icon="spinner .pulse" fixed-width/></template>
 		</button>
 	</footer>
 </div>
@@ -37,10 +34,12 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 
 const displayLimit = 30;
 
 export default Vue.extend({
+	i18n: i18n(),
 	props: {
 		more: {
 			type: Function,
@@ -64,7 +63,7 @@ export default Vue.extend({
 				const date = new Date(note.createdAt).getDate();
 				const month = new Date(note.createdAt).getMonth() + 1;
 				note._date = date;
-				note._datetext = '%i18n:common.month-and-day%'.replace('{month}', month.toString()).replace('{day}', date.toString());
+				note._datetext = this.$t('@.month-and-day').replace('{month}', month.toString()).replace('{day}', date.toString());
 				return note;
 			});
 		}
@@ -233,7 +232,7 @@ export default Vue.extend({
 			span
 				margin 0 16px
 
-			[data-fa]
+			[data-icon]
 				margin-right 8px
 
 	> .placeholder
@@ -250,7 +249,7 @@ export default Vue.extend({
 		text-align center
 		color #999
 
-		> [data-fa]
+		> [data-icon]
 			display block
 			margin-bottom 16px
 			font-size 3em

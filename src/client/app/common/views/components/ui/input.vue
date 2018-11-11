@@ -1,5 +1,5 @@
 <template>
-<div class="ui-input" :class="[{ focused, filled, inline }, styl]">
+<div class="ui-input" :class="[{ focused, filled, inline, disabled }, styl]">
 	<div class="icon" ref="icon"><slot name="icon"></slot></div>
 	<div class="input">
 		<div class="password-meter" v-if="withPasswordMeter" v-show="passwordStrength != ''" :data-strength="passwordStrength">
@@ -11,6 +11,7 @@
 			<input ref="input"
 					:type="type"
 					v-model="v"
+					:disabled="disabled"
 					:required="required"
 					:readonly="readonly"
 					:pattern="pattern"
@@ -32,7 +33,7 @@
 		</template>
 		<div class="suffix" ref="suffix"><slot name="suffix"></slot></div>
 	</div>
-	<div class="text"><slot name="text"></slot></div>
+	<div class="desc"><slot name="desc"></slot></div>
 </div>
 </template>
 
@@ -59,6 +60,10 @@ export default Vue.extend({
 			required: false
 		},
 		readonly: {
+			type: Boolean,
+			required: false
+		},
+		disabled: {
 			type: Boolean,
 			required: false
 		},
@@ -316,7 +321,7 @@ root(fill)
 			if fill
 				padding-right 12px
 
-	> .text
+	> .desc
 		margin 6px 0
 		font-size 13px
 
@@ -352,5 +357,11 @@ root(fill)
 	&.inline
 		display inline-block
 		margin 0
+
+	&.disabled
+		opacity 0.7
+
+		&, *
+			cursor not-allowed !important
 
 </style>

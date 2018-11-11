@@ -1,14 +1,14 @@
 <template>
 <x-column>
 	<span slot="header">
-		%fa:comment-alt R%<span>{{ title }}</span>
+		<fa :icon="['far', 'comment-alt']"/><span>{{ title }}</span>
 	</span>
 
 	<div class="rvtscbadixhhbsczoorqoaygovdeecsx" v-if="note">
 		<div class="is-remote" v-if="note.user.host != null">
 			<details>
-				<summary>%fa:exclamation-triangle% %i18n:common.is-remote-post%</summary>
-				<a :href="note.url || note.uri" target="_blank">%i18n:common.view-on-remote%</a>
+				<summary><fa icon="exclamation-triangle"/> {{ $t('@.is-remote-post') }}</summary>
+				<a :href="note.url || note.uri" target="_blank">{{ $t('@.view-on-remote') }}</a>
 			</details>
 		</div>
 		<x-note :note="note" :detail="true" :mini="true"/>
@@ -18,11 +18,13 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../../i18n';
 import XColumn from './deck.column.vue';
 import XNotes from './deck.notes.vue';
 import XNote from '../../components/note.vue';
 
 export default Vue.extend({
+	i18n: i18n(),
 	components: {
 		XColumn,
 		XNotes,
@@ -50,7 +52,7 @@ export default Vue.extend({
 	},
 
 	created() {
-		(this as any).api('notes/show', { noteId: this.noteId }).then(note => {
+		this.$root.api('notes/show', { noteId: this.noteId }).then(note => {
 			this.note = note;
 			this.fetching = false;
 		});

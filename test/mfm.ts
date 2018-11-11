@@ -16,7 +16,7 @@ describe('Text', () => {
 			{ type: 'text', content: ' '},
 			{ type: 'mention', content: '@hima_sub@namori.net', canonical: '@hima_sub@namori.net', username: 'hima_sub', host: 'namori.net' },
 			{ type: 'text', content: ' お腹ペコい ' },
-			{ type: 'emoji', content: ':cat:', emoji: 'cat'},
+			{ type: 'emoji', content: ':cat:', name: 'cat'},
 			{ type: 'text', content: ' '},
 			{ type: 'hashtag', content: '#yryr', hashtag: 'yryr' }
 		], tokens);
@@ -182,15 +182,20 @@ describe('Text', () => {
 		it('emoji', () => {
 			const tokens1 = analyze(':cat:');
 			assert.deepEqual([
-				{ type: 'emoji', content: ':cat:', emoji: 'cat'}
+				{ type: 'emoji', content: ':cat:', name: 'cat' }
 			], tokens1);
 
 			const tokens2 = analyze(':cat::cat::cat:');
 			assert.deepEqual([
-				{ type: 'emoji', content: ':cat:', emoji: 'cat'},
-				{ type: 'emoji', content: ':cat:', emoji: 'cat'},
-				{ type: 'emoji', content: ':cat:', emoji: 'cat'}
+				{ type: 'emoji', content: ':cat:', name: 'cat' },
+				{ type: 'emoji', content: ':cat:', name: 'cat' },
+				{ type: 'emoji', content: ':cat:', name: 'cat' }
 			], tokens2);
+
+			const tokens3 = analyze('🍎');
+			assert.deepEqual([
+				{ type: 'emoji', content: '🍎', emoji: '🍎' }
+			], tokens3);
 		});
 
 		it('block code', () => {
@@ -208,40 +213,47 @@ describe('Text', () => {
 		it('search', () => {
 			const tokens1 = analyze('a b c 検索');
 			assert.deepEqual([
-				{ type: 'search', content: 'a b c 検索', query: 'a b c'}
+				{ type: 'search', content: 'a b c 検索', query: 'a b c' }
 			], tokens1);
 
 			const tokens2 = analyze('a b c Search');
 			assert.deepEqual([
-				{ type: 'search', content: 'a b c Search', query: 'a b c'}
+				{ type: 'search', content: 'a b c Search', query: 'a b c' }
 			], tokens2);
 
 			const tokens3 = analyze('a b c search');
 			assert.deepEqual([
-				{ type: 'search', content: 'a b c search', query: 'a b c'}
+				{ type: 'search', content: 'a b c search', query: 'a b c' }
 			], tokens3);
 
 			const tokens4 = analyze('a b c SEARCH');
 			assert.deepEqual([
-				{ type: 'search', content: 'a b c SEARCH', query: 'a b c'}
+				{ type: 'search', content: 'a b c SEARCH', query: 'a b c' }
 			], tokens4);
 		});
 
 		it('title', () => {
 			const tokens1 = analyze('【yee】\nhaw');
 			assert.deepEqual(
-				{ type: 'title', content: '【yee】\n', title: 'yee'}
+				{ type: 'title', content: '【yee】\n', title: 'yee' }
 			, tokens1[0]);
 
 			const tokens2 = analyze('[yee]\nhaw');
 			assert.deepEqual(
-				{ type: 'title', content: '[yee]\n', title: 'yee'}
+				{ type: 'title', content: '[yee]\n', title: 'yee' }
 			, tokens2[0]);
 
 			const tokens3 = analyze('a [a]\nb [b]\nc [c]');
 			assert.deepEqual(
 				{ type: 'text', content: 'a [a]\nb [b]\nc [c]' }
 			, tokens3[0]);
+
+			const tokens4 = analyze('foo\n【bar】\nbuzz');
+			assert.deepEqual([
+				{ type: 'text', content: 'foo' },
+				{ type: 'title', content: '\n【bar】\n', title: 'bar' },
+				{ type: 'text', content: 'buzz' },
+			], tokens4);
 		});
 	});
 

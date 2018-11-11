@@ -23,6 +23,7 @@ const defaultSettings = {
 	circleIcons: true,
 	contrastedAcct: true,
 	showFullAcct: false,
+	showVia: true,
 	showReplyTarget: true,
 	showMyRenotes: true,
 	showRenotedMyNotes: true,
@@ -62,7 +63,8 @@ const defaultDeviceSettings = {
 	deckColumnAlign: 'center',
 	mobileNotificationPosition: 'bottom',
 	deckTemporaryColumn: null,
-	deckDefault: false
+	deckDefault: false,
+	useOsDefaultEmojis: false
 };
 
 export default (os: MiOS) => new Vuex.Store({
