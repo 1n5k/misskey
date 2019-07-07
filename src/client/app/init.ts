@@ -5,29 +5,298 @@
 import Vue from 'vue';
 import Vuex from 'vuex';
 import VueRouter from 'vue-router';
-import * as TreeView from 'vue-json-tree-view';
 import VAnimateCss from 'v-animate-css';
 import VModal from 'vue-js-modal';
-import VueSweetalert2 from 'vue-sweetalert2';
+import VueI18n from 'vue-i18n';
+import SequentialEntrance from 'vue-sequential-entrance';
 
 import VueHotkey from './common/hotkey';
+import VueSize from './common/size';
 import App from './app.vue';
 import checkForUpdate from './common/scripts/check-for-update';
-import MiOS, { API } from './mios';
-import { version, codename, lang } from './config';
-import { builtinThemes, lightTheme, applyTheme } from './theme';
+import MiOS from './mios';
+import { version, codename, lang, locale } from './config';
+import { builtinThemes, applyTheme, futureTheme } from './theme';
+import Dialog from './common/views/components/dialog.vue';
 
 if (localStorage.getItem('theme') == null) {
-	applyTheme(lightTheme);
+	applyTheme(futureTheme);
 }
+
+//#region FontAwesome
+import { library } from '@fortawesome/fontawesome-svg-core';
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+
+import {
+	faRetweet,
+	faPlus,
+	faUser,
+	faCog,
+	faCheck,
+	faStar,
+	faReply,
+	faEllipsisH,
+	faQuoteLeft,
+	faQuoteRight,
+	faAngleUp,
+	faAngleDown,
+	faAt,
+	faHashtag,
+	faHome,
+	faGlobe,
+	faCircle,
+	faList,
+	faHeart,
+	faUnlock,
+	faRssSquare,
+	faSort,
+	faChartPie,
+	faChartBar,
+	faPencilAlt,
+	faColumns,
+	faComments,
+	faGamepad,
+	faCloud,
+	faPowerOff,
+	faChevronCircleLeft,
+	faChevronCircleRight,
+	faShareAlt,
+	faTimes,
+	faThumbtack,
+	faSearch,
+	faAngleRight,
+	faWrench,
+	faTerminal,
+	faMoon,
+	faPalette,
+	faSlidersH,
+	faDesktop,
+	faVolumeUp,
+	faLanguage,
+	faInfoCircle,
+	faExclamationTriangle,
+	faKey,
+	faBan,
+	faCogs,
+	faUnlockAlt,
+	faPuzzlePiece,
+	faMobileAlt,
+	faSignInAlt,
+	faSyncAlt,
+	faPaperPlane,
+	faUpload,
+	faMapMarkerAlt,
+	faEnvelope,
+	faLock,
+	faFolderOpen,
+	faBirthdayCake,
+	faImage,
+	faEye,
+	faDownload,
+	faFileImport,
+	faLink,
+	faArrowRight,
+	faICursor,
+	faCaretRight,
+	faReplyAll,
+	faCamera,
+	faMinus,
+	faCaretDown,
+	faCalculator,
+	faUsers,
+	faBars,
+	faFileImage,
+	faPollH,
+	faFolder,
+	faMicrochip,
+	faMemory,
+	faServer,
+	faExclamationCircle,
+	faSpinner,
+	faBroadcastTower,
+	faChartLine,
+	faEllipsisV,
+	faStickyNote,
+	faUserClock,
+	faUserPlus,
+	faExternalLinkSquareAlt,
+	faSync,
+	faArrowLeft,
+	faMapMarker,
+	faRobot,
+	faHourglassHalf,
+	faGavel
+} from '@fortawesome/free-solid-svg-icons';
+
+import {
+	faBell as farBell,
+	faEnvelope as farEnvelope,
+	faComments as farComments,
+	faTrashAlt as farTrashAlt,
+	faWindowRestore as farWindowRestore,
+	faFolder as farFolder,
+	faLaugh as farLaugh,
+	faSmile as farSmile,
+	faEyeSlash as farEyeSlash,
+	faFolderOpen as farFolderOpen,
+	faSave as farSave,
+	faImages as farImages,
+	faChartBar as farChartBar,
+	faCommentAlt as farCommentAlt,
+	faClock as farClock,
+	faCalendarAlt as farCalendarAlt,
+	faHdd as farHdd,
+	faMoon as farMoon,
+	faPlayCircle as farPlayCircle,
+	faLightbulb as farLightbulb,
+	faStickyNote as farStickyNote,
+} from '@fortawesome/free-regular-svg-icons';
+
+import {
+	faTwitter as fabTwitter,
+	faGithub as fabGithub,
+	faDiscord as fabDiscord
+} from '@fortawesome/free-brands-svg-icons';
+import i18n from './i18n';
+
+library.add(
+	faRetweet,
+	faPlus,
+	faUser,
+	faCog,
+	faCheck,
+	faStar,
+	faReply,
+	faEllipsisH,
+	faQuoteLeft,
+	faQuoteRight,
+	faAngleUp,
+	faAngleDown,
+	faAt,
+	faHashtag,
+	faHome,
+	faGlobe,
+	faCircle,
+	faList,
+	faHeart,
+	faUnlock,
+	faRssSquare,
+	faSort,
+	faChartPie,
+	faChartBar,
+	faPencilAlt,
+	faColumns,
+	faComments,
+	faGamepad,
+	faCloud,
+	faPowerOff,
+	faChevronCircleLeft,
+	faChevronCircleRight,
+	faShareAlt,
+	faTimes,
+	faThumbtack,
+	faSearch,
+	faAngleRight,
+	faWrench,
+	faTerminal,
+	faMoon,
+	faPalette,
+	faSlidersH,
+	faDesktop,
+	faVolumeUp,
+	faLanguage,
+	faInfoCircle,
+	faExclamationTriangle,
+	faKey,
+	faBan,
+	faCogs,
+	faUnlockAlt,
+	faPuzzlePiece,
+	faMobileAlt,
+	faSignInAlt,
+	faSyncAlt,
+	faPaperPlane,
+	faUpload,
+	faMapMarkerAlt,
+	faEnvelope,
+	faLock,
+	faFolderOpen,
+	faBirthdayCake,
+	faImage,
+	faEye,
+	faDownload,
+	faFileImport,
+	faLink,
+	faArrowRight,
+	faICursor,
+	faCaretRight,
+	faReplyAll,
+	faCamera,
+	faMinus,
+	faCaretDown,
+	faCalculator,
+	faUsers,
+	faBars,
+	faFileImage,
+	faPollH,
+	faFolder,
+	faMicrochip,
+	faMemory,
+	faServer,
+	faExclamationCircle,
+	faSpinner,
+	faBroadcastTower,
+	faChartLine,
+	faEllipsisV,
+	faStickyNote,
+	faUserClock,
+	faUserPlus,
+	faExternalLinkSquareAlt,
+	faSync,
+	faArrowLeft,
+	faMapMarker,
+	faRobot,
+	faHourglassHalf,
+	faGavel,
+
+	farBell,
+	farEnvelope,
+	farComments,
+	farTrashAlt,
+	farWindowRestore,
+	farFolder,
+	farLaugh,
+	farSmile,
+	farEyeSlash,
+	farFolderOpen,
+	farSave,
+	farImages,
+	farChartBar,
+	farCommentAlt,
+	farClock,
+	farCalendarAlt,
+	farHdd,
+	farMoon,
+	farPlayCircle,
+	farLightbulb,
+	farStickyNote,
+
+	fabTwitter,
+	fabGithub,
+	fabDiscord
+);
+//#endregion
 
 Vue.use(Vuex);
 Vue.use(VueRouter);
-Vue.use(TreeView);
 Vue.use(VAnimateCss);
 Vue.use(VModal);
 Vue.use(VueHotkey);
-Vue.use(VueSweetalert2);
+Vue.use(VueSize);
+Vue.use(VueI18n);
+Vue.use(SequentialEntrance);
+
+Vue.component('fa', FontAwesomeIcon);
 
 // Register global directives
 require('./common/views/directives');
@@ -57,7 +326,7 @@ Vue.mixin({
 
 console.info(`Misskey v${version} (${codename})`);
 console.info(
-	'%c%i18n:common.do-not-copy-paste%',
+	`%c${locale['common']['do-not-copy-paste']}`,
 	'color: red; background: yellow; font-size: 16px; font-weight: bold;');
 
 // BootTimer解除
@@ -83,16 +352,14 @@ if (localStorage.getItem('should-refresh') == 'true') {
 }
 
 // MiOSを初期化してコールバックする
-export default (callback: (launch: (router: VueRouter, api?: (os: MiOS) => API) => [Vue, MiOS]) => void, sw = false) => {
+export default (callback: (launch: (router: VueRouter) => [Vue, MiOS], os: MiOS) => void, sw = false) => {
 	const os = new MiOS(sw);
 
 	os.init(() => {
 		// アプリ基底要素マウント
 		document.body.innerHTML = '<div id="app"></div>';
 
-		const launch = (router: VueRouter, api?: (os: MiOS) => API) => {
-			os.apis = api ? api(os) : null;
-
+		const launch = (router: VueRouter) => {
 			//#region theme
 			os.store.watch(s => {
 				return s.device.darkmode;
@@ -122,44 +389,35 @@ export default (callback: (launch: (router: VueRouter, api?: (os: MiOS) => API) 
 			});
 			//#endregion
 
-			//#region shadow
-			const shadow = '0 3px 8px rgba(0, 0, 0, 0.2)';
-			const shadowRight = '4px 0 4px rgba(0, 0, 0, 0.1)';
-			const shadowLeft = '-4px 0 4px rgba(0, 0, 0, 0.1)';
-			if (os.store.state.settings.useShadow) document.documentElement.style.setProperty('--shadow', shadow);
-			if (os.store.state.settings.useShadow) document.documentElement.style.setProperty('--shadowRight', shadowRight);
-			if (os.store.state.settings.useShadow) document.documentElement.style.setProperty('--shadowLeft', shadowLeft);
-			os.store.watch(s => {
-				return s.settings.useShadow;
-			}, v => {
-				document.documentElement.style.setProperty('--shadow', v ? shadow : 'none');
-				document.documentElement.style.setProperty('--shadowRight', v ? shadowRight : 'none');
-				document.documentElement.style.setProperty('--shadowLeft', v ? shadowLeft : 'none');
-			});
-			//#endregion
-
-			//#region rounded corners
-			const round = '6px';
-			if (os.store.state.settings.roundedCorners) document.documentElement.style.setProperty('--round', round);
-			os.store.watch(s => {
-				return s.settings.roundedCorners;
-			}, v => {
-				document.documentElement.style.setProperty('--round', v ? round : '0');
-			});
-			//#endregion
-
-			// Navigation hook
-			router.beforeEach((to, from, next) => {
-				if (os.store.state.navHook) {
-					if (os.store.state.navHook(to)) {
-						next(false);
-					} else {
-						next();
-					}
-				} else {
-					next();
+			/*// Reapply current theme
+			try {
+				const themeName = os.store.state.device.darkmode ? os.store.state.device.darkTheme : os.store.state.device.lightTheme;
+				const themes = os.store.state.device.themes.concat(builtinThemes);
+				const theme = themes.find(t => t.id == themeName);
+				if (theme) {
+					applyTheme(theme);
 				}
+			} catch (e) {
+				console.log(`Cannot reapply theme. ${e}`);
+			}*/
+
+			//#region line width
+			document.documentElement.style.setProperty('--lineWidth', `${os.store.state.device.lineWidth}px`);
+			os.store.watch(s => {
+				return s.device.lineWidth;
+			}, v => {
+				document.documentElement.style.setProperty('--lineWidth', `${os.store.state.device.lineWidth}px`);
 			});
+			//#endregion
+
+			//#region fontSize
+			document.documentElement.style.setProperty('--fontSize', `${os.store.state.device.fontSize}px`);
+			os.store.watch(s => {
+				return s.device.fontSize;
+			}, v => {
+				document.documentElement.style.setProperty('--fontSize', `${os.store.state.device.fontSize}px`);
+			});
+			//#endregion
 
 			document.addEventListener('visibilitychange', () => {
 				if (!document.hidden) {
@@ -173,18 +431,55 @@ export default (callback: (launch: (router: VueRouter, api?: (os: MiOS) => API) 
 				}
 			}, { passive: true });
 
-			Vue.mixin({
+			const app = new Vue({
+				i18n: i18n(),
+				store: os.store,
 				data() {
 					return {
-						os,
-						api: os.api,
-						apis: os.apis
+						os: {
+							windows: os.windows
+						},
+						stream: os.stream,
+						instanceName: os.instanceName
 					};
-				}
-			});
-
-			const app = new Vue({
-				store: os.store,
+				},
+				methods: {
+					api: os.api,
+					getMeta: os.getMeta,
+					getMetaSync: os.getMetaSync,
+					signout: os.signout,
+					new(vm, props) {
+						const x = new vm({
+							parent: this,
+							propsData: props
+						}).$mount();
+						document.body.appendChild(x.$el);
+						return x;
+					},
+					newAsync(vm, props) {
+						return new Promise((res) => {
+							vm().then(vm => {
+								const x = new vm({
+									parent: this,
+									propsData: props
+								}).$mount();
+								document.body.appendChild(x.$el);
+								res(x);
+							});
+						});
+					},
+					dialog(opts) {
+						const vm = this.new(Dialog, opts);
+						const p: any = new Promise((res) => {
+							vm.$once('ok', result => res({ canceled: false, result }));
+							vm.$once('cancel', () => res({ canceled: true }));
+						});
+						p.close = () => {
+							vm.close();
+						};
+						return p;
+					}
+				},
 				router,
 				render: createEl => createEl(App)
 			});
@@ -194,44 +489,22 @@ export default (callback: (launch: (router: VueRouter, api?: (os: MiOS) => API) 
 			// マウント
 			app.$mount('#app');
 
+			//#region 更新チェック
+			setTimeout(() => {
+				checkForUpdate(app);
+			}, 3000);
+			//#endregion
+
 			return [app, os] as [Vue, MiOS];
 		};
 
-		try {
-			callback(launch);
-		} catch (e) {
-			panic(e);
-		}
+		// Deck mode
+		os.store.commit('device/set', {
+			key: 'inDeckMode',
+			value: os.store.getters.isSignedIn && os.store.state.device.deckMode
+				&& (document.location.pathname === '/' || window.performance.navigation.type === 1)
+		});
 
-		//#region 更新チェック
-		const preventUpdate = os.store.state.device.preventUpdate;
-		if (!preventUpdate) {
-			setTimeout(() => {
-				checkForUpdate(os);
-			}, 3000);
-		}
-		//#endregion
+		callback(launch, os);
 	});
 };
-
-// BSoD
-function panic(e) {
-	console.error(e);
-
-	// Display blue screen
-	document.documentElement.style.background = '#1269e2';
-	document.body.innerHTML =
-		'<div id="error">'
-			+ '<h1>%i18n.common.BSoD.fatal-error%</h1>'
-			+ '<p>%i18n.common.BSoD.update-browser-os%</p>'
-			+ '<hr>'
-			+ `<p>%i18n.common.BSoD.error-code%: ${e.toString()}</p>`
-			+ `<p>%i18n.common.BSoD.browser-version%: ${navigator.userAgent}</p>`
-			+ `<p>%i18n.common.BSoD.client-version%: ${version}</p>`
-			+ '<hr>'
-			+ '<p>%i18n.common.BSoD.email-support%</p>'
-			+ '<p>%i18n.common.BSoD.thanks%</p>'
-		+ '</div>';
-
-	// TODO: Report the bug
-}

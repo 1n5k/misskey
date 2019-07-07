@@ -1,150 +1,217 @@
-import $ from 'cafy'; import ID from '../../../../../misc/cafy-id';
-import Message from '../../../../../models/messaging-message';
-import { isValidText } from '../../../../../models/messaging-message';
-import History from '../../../../../models/messaging-history';
-import User, { ILocalUser } from '../../../../../models/user';
-import Mute from '../../../../../models/mute';
-import DriveFile from '../../../../../models/drive-file';
-import { pack } from '../../../../../models/messaging-message';
-import { publishMainStream } from '../../../../../stream';
-import { publishMessagingStream, publishMessagingIndexStream } from '../../../../../stream';
-import pushSw from '../../../../../push-sw';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
+import { publishMainStream, publishGroupMessagingStream } from '../../../../../services/stream';
+import { publishMessagingStream, publishMessagingIndexStream } from '../../../../../services/stream';
+import pushSw from '../../../../../services/push-notification';
+import define from '../../../define';
+import { ApiError } from '../../../error';
+import { getUser } from '../../../common/getters';
+import { MessagingMessages, DriveFiles, Mutings, UserGroups, UserGroupJoinings } from '../../../../../models';
+import { MessagingMessage } from '../../../../../models/entities/messaging-message';
+import { genId } from '../../../../../misc/gen-id';
+import { User } from '../../../../../models/entities/user';
+import { UserGroup } from '../../../../../models/entities/user-group';
+import { Not } from 'typeorm';
 
 export const meta = {
 	desc: {
-		'ja-JP': '指定したユーザーへMessagingのメッセージを送信します。',
+		'ja-JP': 'トークメッセージを送信します。',
 		'en-US': 'Create a message of messaging.'
 	},
 
+	tags: ['messaging'],
+
 	requireCredential: true,
 
-	kind: 'messaging-write'
+	kind: 'write:messaging',
+
+	params: {
+		userId: {
+			validator: $.optional.type(ID),
+			desc: {
+				'ja-JP': '対象のユーザーのID',
+				'en-US': 'Target user ID'
+			}
+		},
+
+		groupId: {
+			validator: $.optional.type(ID),
+			desc: {
+				'ja-JP': '対象のグループのID',
+				'en-US': 'Target group ID'
+			}
+		},
+
+		text: {
+			validator: $.optional.str.pipe(MessagingMessages.validateText)
+		},
+
+		fileId: {
+			validator: $.optional.type(ID),
+		}
+	},
+
+	res: {
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		ref: 'MessagingMessage',
+	},
+
+	errors: {
+		recipientIsYourself: {
+			message: 'You can not send a message to yourself.',
+			code: 'RECIPIENT_IS_YOURSELF',
+			id: '17e2ba79-e22a-4cbc-bf91-d327643f4a7e'
+		},
+
+		noSuchUser: {
+			message: 'No such user.',
+			code: 'NO_SUCH_USER',
+			id: '11795c64-40ea-4198-b06e-3c873ed9039d'
+		},
+
+		noSuchGroup: {
+			message: 'No such group.',
+			code: 'NO_SUCH_GROUP',
+			id: 'c94e2a5d-06aa-4914-8fa6-6a42e73d6537'
+		},
+
+		groupAccessDenied: {
+			message: 'You can not send messages to groups that you have not joined.',
+			code: 'GROUP_ACCESS_DENIED',
+			id: 'd96b3cca-5ad1-438b-ad8b-02f931308fbd'
+		},
+
+		noSuchFile: {
+			message: 'No such file.',
+			code: 'NO_SUCH_FILE',
+			id: '4372b8e2-185d-4146-8749-2f68864a3e5f'
+		},
+
+		contentRequired: {
+			message: 'Content required. You need to set text or fileId.',
+			code: 'CONTENT_REQUIRED',
+			id: '25587321-b0e6-449c-9239-f8925092942c'
+		}
+	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'userId' parameter
-	const [recipientId, recipientIdErr] = $.type(ID).get(params.userId);
-	if (recipientIdErr) return rej('invalid userId param');
+export default define(meta, async (ps, user) => {
+	let recipientUser: User | undefined;
+	let recipientGroup: UserGroup | undefined;
 
-	// Myself
-	if (recipientId.equals(user._id)) {
-		return rej('cannot send message to myself');
-	}
-
-	// Fetch recipient
-	const recipient = await User.findOne({
-		_id: recipientId
-	}, {
-		fields: {
-			_id: true
+	if (ps.userId != null) {
+		// Myself
+		if (ps.userId === user.id) {
+			throw new ApiError(meta.errors.recipientIsYourself);
 		}
-	});
 
-	if (recipient === null) {
-		return rej('user not found');
-	}
+		// Fetch recipient (user)
+		recipientUser = await getUser(ps.userId).catch(e => {
+			if (e.id === '15348ddd-432d-49c2-8a5a-8069753becff') throw new ApiError(meta.errors.noSuchUser);
+			throw e;
+		});
+	} else if (ps.groupId != null) {
+		// Fetch recipient (group)
+		recipientGroup = await UserGroups.findOne(ps.groupId);
 
-	// Get 'text' parameter
-	const [text, textErr] = $.str.optional.pipe(isValidText).get(params.text);
-	if (textErr) return rej('invalid text');
+		if (recipientGroup == null) {
+			throw new ApiError(meta.errors.noSuchGroup);
+		}
 
-	// Get 'fileId' parameter
-	const [fileId, fileIdErr] = $.type(ID).optional.get(params.fileId);
-	if (fileIdErr) return rej('invalid fileId param');
-
-	let file = null;
-	if (fileId !== undefined) {
-		file = await DriveFile.findOne({
-			_id: fileId,
-			'metadata.userId': user._id
+		// check joined
+		const joining = await UserGroupJoinings.findOne({
+			userId: user.id,
+			userGroupId: recipientGroup.id
 		});
 
-		if (file === null) {
-			return rej('file not found');
+		if (joining == null) {
+			throw new ApiError(meta.errors.groupAccessDenied);
+		}
+	}
+
+	let file = null;
+	if (ps.fileId != null) {
+		file = await DriveFiles.findOne({
+			id: ps.fileId,
+			userId: user.id
+		});
+
+		if (file == null) {
+			throw new ApiError(meta.errors.noSuchFile);
 		}
 	}
 
 	// テキストが無いかつ添付ファイルも無かったらエラー
-	if (text === undefined && file === null) {
-		return rej('text or file is required');
+	if (ps.text == null && file == null) {
+		throw new ApiError(meta.errors.contentRequired);
 	}
 
-	// メッセージを作成
-	const message = await Message.insert({
+	const message = await MessagingMessages.save({
+		id: genId(),
 		createdAt: new Date(),
-		fileId: file ? file._id : undefined,
-		recipientId: recipient._id,
-		text: text ? text.trim() : undefined,
-		userId: user._id,
-		isRead: false
-	});
+		fileId: file ? file.id : null,
+		recipientId: recipientUser ? recipientUser.id : null,
+		groupId: recipientGroup ? recipientGroup.id : null,
+		text: ps.text ? ps.text.trim() : null,
+		userId: user.id,
+		isRead: false,
+		reads: [] as any[]
+	} as MessagingMessage);
 
-	// Serialize
-	const messageObj = await pack(message);
+	const messageObj = await MessagingMessages.pack(message);
 
-	// Reponse
-	res(messageObj);
+	if (recipientUser) {
+		// 自分のストリーム
+		publishMessagingStream(message.userId, recipientUser.id, 'message', messageObj);
+		publishMessagingIndexStream(message.userId, 'message', messageObj);
+		publishMainStream(message.userId, 'messagingMessage', messageObj);
 
-	// 自分のストリーム
-	publishMessagingStream(message.userId, message.recipientId, 'message', messageObj);
-	publishMessagingIndexStream(message.userId, 'message', messageObj);
-	publishMainStream(message.userId, 'messagingMessage', messageObj);
+		// 相手のストリーム
+		publishMessagingStream(recipientUser.id, message.userId, 'message', messageObj);
+		publishMessagingIndexStream(recipientUser.id, 'message', messageObj);
+		publishMainStream(recipientUser.id, 'messagingMessage', messageObj);
+	} else if (recipientGroup) {
+		// グループのストリーム
+		publishGroupMessagingStream(recipientGroup.id, 'message', messageObj);
 
-	// 相手のストリーム
-	publishMessagingStream(message.recipientId, message.userId, 'message', messageObj);
-	publishMessagingIndexStream(message.recipientId, 'message', messageObj);
-	publishMainStream(message.recipientId, 'messagingMessage', messageObj);
-
-	// Update flag
-	User.update({ _id: recipient._id }, {
-		$set: {
-			hasUnreadMessagingMessage: true
+		// メンバーのストリーム
+		const joinings = await UserGroupJoinings.find({ userGroupId: recipientGroup.id });
+		for (const joining of joinings) {
+			publishMessagingIndexStream(joining.userId, 'message', messageObj);
+			publishMainStream(joining.userId, 'messagingMessage', messageObj);
 		}
-	});
+	}
 
 	// 2秒経っても(今回作成した)メッセージが既読にならなかったら「未読のメッセージがありますよ」イベントを発行する
 	setTimeout(async () => {
-		const freshMessage = await Message.findOne({ _id: message._id }, { isRead: true });
-		if (!freshMessage.isRead) {
+		const freshMessage = await MessagingMessages.findOne(message.id);
+		if (freshMessage == null) return; // メッセージが削除されている場合もある
+
+		if (recipientUser) {
+			if (freshMessage.isRead) return; // 既読
+
 			//#region ただしミュートされているなら発行しない
-			const mute = await Mute.find({
-				muterId: recipient._id,
-				deletedAt: { $exists: false }
+			const mute = await Mutings.find({
+				muterId: recipientUser.id,
 			});
 			const mutedUserIds = mute.map(m => m.muteeId.toString());
-			if (mutedUserIds.indexOf(user._id.toString()) != -1) {
+			if (mutedUserIds.indexOf(user.id) != -1) {
 				return;
 			}
 			//#endregion
 
-			publishMainStream(message.recipientId, 'unreadMessagingMessage', messageObj);
-			pushSw(message.recipientId, 'unreadMessagingMessage', messageObj);
+			publishMainStream(recipientUser.id, 'unreadMessagingMessage', messageObj);
+			pushSw(recipientUser.id, 'unreadMessagingMessage', messageObj);
+		} else if (recipientGroup) {
+			const joinings = await UserGroupJoinings.find({ userGroupId: recipientGroup.id, userId: Not(user.id) });
+			for (const joining of joinings) {
+				if (freshMessage.reads.includes(joining.userId)) return; // 既読
+				publishMainStream(joining.userId, 'unreadMessagingMessage', messageObj);
+				pushSw(joining.userId, 'unreadMessagingMessage', messageObj);
+			}
 		}
 	}, 2000);
 
-	// 履歴作成(自分)
-	History.update({
-		userId: user._id,
-		partnerId: recipient._id
-	}, {
-		updatedAt: new Date(),
-		userId: user._id,
-		partnerId: recipient._id,
-		messageId: message._id
-	}, {
-		upsert: true
-	});
-
-	// 履歴作成(相手)
-	History.update({
-		userId: recipient._id,
-		partnerId: user._id
-	}, {
-		updatedAt: new Date(),
-		userId: recipient._id,
-		partnerId: user._id,
-		messageId: message._id
-	}, {
-		upsert: true
-	});
+	return messageObj;
 });

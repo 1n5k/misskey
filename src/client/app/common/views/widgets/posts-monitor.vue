@@ -1,8 +1,8 @@
 <template>
 <div class="mkw-posts-monitor">
-	<mk-widget-container :show-header="props.design == 0" :naked="props.design == 2">
-		<template slot="header">%fa:chart-line%%i18n:@title%</template>
-		<button slot="func" @click="toggle" title="%i18n:@toggle%">%fa:sort%</button>
+	<ui-container :show-header="props.design == 0" :naked="props.design == 2">
+		<template #header><fa icon="chart-line"/>{{ $t('title') }}</template>
+		<template #func><button @click="toggle" :title="$t('toggle')"><fa icon="sort"/></button></template>
 
 		<div class="qpdmibaztplkylerhdbllwcokyrfxeyj" :class="{ dual: props.view == 0 }">
 			<svg :viewBox="`0 0 ${ viewBoxX } ${ viewBoxY }`" v-show="props.view != 2">
@@ -64,21 +64,24 @@
 				<text x="1" y="5">Fedi</text>
 			</svg>
 		</div>
-	</mk-widget-container>
+	</ui-container>
 </div>
 </template>
 
 <script lang="ts">
 import define from '../../../common/define-widget';
+import i18n from '../../../i18n';
 import * as uuid from 'uuid';
 
 export default define({
-	name: 'server',
+	name: 'posts-monitor',
 	props: () => ({
 		design: 0,
 		view: 0
 	})
 }).extend({
+	i18n: i18n('common/views/widgets/posts-monitor.vue'),
+
 	data() {
 		return {
 			connection: null,
@@ -109,7 +112,7 @@ export default define({
 		}
 	},
 	mounted() {
-		this.connection = (this as any).os.stream.useSharedConnection('notesStats');
+		this.connection = this.$root.stream.useSharedConnection('notesStats');
 
 		this.connection.on('stats', this.onStats);
 		this.connection.on('statsLog', this.onStatsLog);
@@ -161,7 +164,7 @@ export default define({
 			this.draw();
 		},
 		onStatsLog(statsLog) {
-			statsLog.forEach(stats => this.onStats(stats));
+			for (const stats of statsLog) this.onStats(stats);
 		}
 	}
 });

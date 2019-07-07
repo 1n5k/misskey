@@ -1,71 +1,104 @@
-import $ from 'cafy'; import ID from '../../../../misc/cafy-id';
-import User, { pack, ILocalUser, isRemoteUser } from '../../../../models/user';
-import resolveRemoteUser from '../../../../remote/resolve-user';
+import $ from 'cafy';
+import { resolveUser } from '../../../../remote/resolve-user';
+import define from '../../define';
+import { apiLogger } from '../../logger';
+import { ApiError } from '../../error';
+import { ID } from '../../../../misc/cafy-id';
+import { Users } from '../../../../models';
+import { In } from 'typeorm';
 
-const cursorOption = { fields: { data: false } };
+export const meta = {
+	desc: {
+		'ja-JP': '指定したユーザーの情報を取得します。'
+	},
 
-/**
- * Show user(s)
- */
-export default (params: any, me: ILocalUser) => new Promise(async (res, rej) => {
+	tags: ['users'],
+
+	requireCredential: false,
+
+	params: {
+		userId: {
+			validator: $.optional.type(ID),
+			desc: {
+				'ja-JP': '対象のユーザーのID',
+				'en-US': 'Target user ID'
+			}
+		},
+
+		userIds: {
+			validator: $.optional.arr($.type(ID)).unique(),
+			desc: {
+				'ja-JP': 'ユーザーID (配列)'
+			}
+		},
+
+		username: {
+			validator: $.optional.str
+		},
+
+		host: {
+			validator: $.optional.nullable.str
+		}
+	},
+
+	res: {
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		ref: 'User',
+	},
+
+	errors: {
+		failedToResolveRemoteUser: {
+			message: 'Failed to resolve remote user.',
+			code: 'FAILED_TO_RESOLVE_REMOTE_USER',
+			id: 'ef7b9be4-9cba-4e6f-ab41-90ed171c7d3c',
+			kind: 'server' as const
+		},
+
+		noSuchUser: {
+			message: 'No such user.',
+			code: 'NO_SUCH_USER',
+			id: '4362f8dc-731f-4ad8-a694-be5a88922a24'
+		},
+	}
+};
+
+export default define(meta, async (ps, me) => {
 	let user;
 
-	// Get 'userId' parameter
-	const [userId, userIdErr] = $.type(ID).optional.get(params.userId);
-	if (userIdErr) return rej('invalid userId param');
+	if (ps.userIds) {
+		if (ps.userIds.length === 0) {
+			return [];
+		}
 
-	// Get 'userIds' parameter
-	const [userIds, userIdsErr] = $.arr($.type(ID)).optional.get(params.userIds);
-	if (userIdsErr) return rej('invalid userIds param');
-
-	// Get 'username' parameter
-	const [username, usernameErr] = $.str.optional.get(params.username);
-	if (usernameErr) return rej('invalid username param');
-
-	// Get 'host' parameter
-	const [host, hostErr] = $.str.optional.nullable.get(params.host);
-	if (hostErr) return rej('invalid host param');
-
-	if (userIds) {
-		const users = await User.find({
-			_id: {
-				$in: userIds
-			}
+		const users = await Users.find({
+			id: In(ps.userIds)
 		});
 
-		res(await Promise.all(users.map(u => pack(u, me, {
+		return await Promise.all(users.map(u => Users.pack(u, me, {
 			detail: true
-		}))));
+		})));
 	} else {
 		// Lookup user
-		if (typeof host === 'string') {
-			try {
-				user = await resolveRemoteUser(username, host, cursorOption);
-			} catch (e) {
-				console.warn(`failed to resolve remote user: ${e}`);
-				return rej('failed to resolve remote user');
-			}
+		if (typeof ps.host === 'string' && typeof ps.username === 'string') {
+			user = await resolveUser(ps.username, ps.host).catch(e => {
+				apiLogger.warn(`failed to resolve remote user: ${e}`);
+				throw new ApiError(meta.errors.failedToResolveRemoteUser);
+			});
 		} else {
-			const q: any = userId !== undefined
-				? { _id: userId }
-				: { usernameLower: username.toLowerCase(), host: null };
+			const q: any = ps.userId != null
+				? { id: ps.userId }
+				: { usernameLower: ps.username!.toLowerCase(), host: null };
 
-			user = await User.findOne(q, cursorOption);
-
-			if (user === null) {
-				return rej('user not found');
-			}
+			user = await Users.findOne(q);
 		}
 
-		// Send response
-		res(await pack(user, me, {
+		if (user == null) {
+			throw new ApiError(meta.errors.noSuchUser);
+		}
+
+		return await Users.pack(user, me, {
 			detail: true
-		}));
-
-		if (isRemoteUser(user)) {
-			if (user.updatedAt == null || Date.now() - user.updatedAt.getTime() > 1000 * 60 * 60 * 24) {
-				resolveRemoteUser(username, host, { }, true);
-			}
-		}
+		});
 	}
 });

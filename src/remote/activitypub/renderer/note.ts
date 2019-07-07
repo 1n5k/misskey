@@ -1,38 +1,39 @@
 import renderDocument from './document';
 import renderHashtag from './hashtag';
 import renderMention from './mention';
+import renderEmoji from './emoji';
 import config from '../../../config';
-import DriveFile, { IDriveFile } from '../../../models/drive-file';
-import Note, { INote } from '../../../models/note';
-import User from '../../../models/user';
 import toHtml from '../misc/get-note-html';
-import parseMfm from '../../../mfm/parse';
+import { Note, IMentionedRemoteUsers } from '../../../models/entities/note';
+import { DriveFile } from '../../../models/entities/drive-file';
+import { DriveFiles, Notes, Users, Emojis, Polls } from '../../../models';
+import { In } from 'typeorm';
+import { Emoji } from '../../../models/entities/emoji';
+import { Poll } from '../../../models/entities/poll';
+import { ensure } from '../../../prelude/ensure';
 
-export default async function renderNote(note: INote, dive = true): Promise<any> {
-	const promisedFiles: Promise<IDriveFile[]> = note.fileIds
-		? DriveFile.find({ _id: { $in: note.fileIds } })
+export default async function renderNote(note: Note, dive = true): Promise<any> {
+	const promisedFiles: Promise<DriveFile[]> = note.fileIds.length > 0
+		? DriveFiles.find({ id: In(note.fileIds) })
 		: Promise.resolve([]);
 
 	let inReplyTo;
+	let inReplyToNote: Note | undefined;
 
 	if (note.replyId) {
-		const inReplyToNote = await Note.findOne({
-			_id: note.replyId,
-		});
+		inReplyToNote = await Notes.findOne(note.replyId);
 
-		if (inReplyToNote !== null) {
-			const inReplyToUser = await User.findOne({
-				_id: inReplyToNote.userId,
-			});
+		if (inReplyToNote != null) {
+			const inReplyToUser = await Users.findOne(inReplyToNote.userId);
 
-			if (inReplyToUser !== null) {
+			if (inReplyToUser != null) {
 				if (inReplyToNote.uri) {
 					inReplyTo = inReplyToNote.uri;
 				} else {
 					if (dive) {
 						inReplyTo = await renderNote(inReplyToNote, false);
 					} else {
-						inReplyTo = `${config.url}/notes/${inReplyToNote._id}`;
+						inReplyTo = `${config.url}/notes/${inReplyToNote.id}`;
 					}
 				}
 			}
@@ -41,15 +42,21 @@ export default async function renderNote(note: INote, dive = true): Promise<any>
 		inReplyTo = null;
 	}
 
-	const user = await User.findOne({
-		_id: note.userId
-	});
+	let quote;
 
-	const attributedTo = `${config.url}/users/${user._id}`;
+	if (note.renoteId) {
+		const renote = await Notes.findOne(note.renoteId);
 
-	const mentions = note.mentionedRemoteUsers && note.mentionedRemoteUsers.length > 0
-		? note.mentionedRemoteUsers.map(x => x.uri)
-		: [];
+		if (renote) {
+			quote = renote.uri ? renote.uri : `${config.url}/notes/${renote.id}`;
+		}
+	}
+
+	const user = await Users.findOne(note.userId).then(ensure);
+
+	const attributedTo = `${config.url}/users/${user.id}`;
+
+	const mentions = (JSON.parse(note.mentionedRemoteUsers) as IMentionedRemoteUsers).map(x => x.uri);
 
 	let to: string[] = [];
 	let cc: string[] = [];
@@ -67,60 +74,109 @@ export default async function renderNote(note: INote, dive = true): Promise<any>
 		to = mentions;
 	}
 
-	const mentionedUsers = note.mentions ? await User.find({
-		_id: {
-			$in: note.mentions
-		}
+	const mentionedUsers = note.mentions.length > 0 ? await Users.find({
+		id: In(note.mentions)
 	}) : [];
 
 	const hashtagTags = (note.tags || []).map(tag => renderHashtag(tag));
 	const mentionTags = mentionedUsers.map(u => renderMention(u));
-	const tag = [
-		...hashtagTags,
-		...mentionTags,
-	];
 
 	const files = await promisedFiles;
 
 	let text = note.text;
+	let poll: Poll | undefined;
 
-	if (note.poll != null) {
+	if (note.hasPoll) {
+		poll = await Polls.findOne({ noteId: note.id });
+	}
+
+	let question: string | undefined;
+	if (poll) {
 		if (text == null) text = '';
-		const url = `${config.url}/notes/${note._id}`;
+		const url = `${config.url}/notes/${note.id}`;
 		// TODO: i18n
-		text += `\n\n[投票を見る](${url})`;
+		text += `\n[リモートで結果を表示](${url})`;
+
+		question = `${config.url}/questions/${note.id}`;
 	}
 
-	if (note.renoteId != null) {
-		if (text == null) text = '';
-		const url = `${config.url}/notes/${note.renoteId}`;
-		text += `\n\nRE: ${url}`;
+	let apText = text;
+	if (apText == null) apText = '';
+
+	// Provides choices as text for AP
+	if (poll) {
+		const cs = poll.choices.map((c, i) => `${i}: ${c}`);
+		apText += '\n----------------------------------------\n';
+		apText += cs.join('\n');
+		apText += '\n----------------------------------------\n';
+		apText += '番号を返信して投票';
 	}
 
-	// 省略されたメンションのホストを復元する
-	if (text != null) {
-		text = parseMfm(text).map(x => {
-			if (x.type == 'mention' && x.host == null) {
-				return `${x.content}@${config.host}`;
-			} else {
-				return x.content;
+	if (quote) {
+		apText += `\n\nRE: ${quote}`;
+	}
+
+	const summary = note.cw === '' ? String.fromCharCode(0x200B) : note.cw;
+
+	const content = toHtml(Object.assign({}, note, {
+		text: apText
+	}));
+
+	const emojis = await getEmojis(note.emojis);
+	const apemojis = emojis.map(emoji => renderEmoji(emoji));
+
+	const tag = [
+		...hashtagTags,
+		...mentionTags,
+		...apemojis,
+	];
+
+	const asPoll = poll ? {
+		type: 'Question',
+		content: toHtml(Object.assign({}, note, {
+			text: text
+		})),
+		_misskey_fallback_content: content,
+		[poll.expiresAt && poll.expiresAt < new Date() ? 'closed' : 'endTime']: poll.expiresAt,
+		[poll.multiple ? 'anyOf' : 'oneOf']: poll.choices.map((text, i) => ({
+			type: 'Note',
+			name: text,
+			replies: {
+				type: 'Collection',
+				totalItems: poll!.votes[i]
 			}
-		}).join('');
-	}
+		}))
+	} : {};
 
 	return {
-		id: `${config.url}/notes/${note._id}`,
+		id: `${config.url}/notes/${note.id}`,
 		type: 'Note',
 		attributedTo,
-		summary: note.cw,
-		content: toHtml(Object.assign({}, note, { text })),
+		summary,
+		content,
 		_misskey_content: text,
+		_misskey_quote: quote,
+		_misskey_question: question,
 		published: note.createdAt.toISOString(),
 		to,
 		cc,
 		inReplyTo,
 		attachment: files.map(renderDocument),
-		sensitive: files.some(file => file.metadata.isSensitive),
-		tag
+		sensitive: files.some(file => file.isSensitive),
+		tag,
+		...asPoll
 	};
+}
+
+export async function getEmojis(names: string[]): Promise<Emoji[]> {
+	if (names == null || names.length === 0) return [];
+
+	const emojis = await Promise.all(
+		names.map(name => Emojis.findOne({
+			name,
+			host: null
+		}))
+	);
+
+	return emojis.filter(emoji => emoji != null) as Emoji[];
 }

@@ -5,7 +5,9 @@
 			<mk-avatar class="avatar" :user="note.user" target="_blank"/>
 			<div class="body">
 				<header>
-					<router-link class="name" :to="note.user | userPage" v-user-preview="note.user.id">{{ note.user | userName }}</router-link>
+					<router-link class="name" :to="note.user | userPage" v-user-preview="note.user.id">
+						<mk-user-name :user="note.user"/>
+					</router-link>
 					<span class="username">@{{ note.user | acct }}</span>
 					<div class="info">
 						<router-link class="created-at" :to="note | notePage">
@@ -14,7 +16,7 @@
 					</div>
 				</header>
 				<div class="text">
-					<misskey-flavored-markdown v-if="note.text" :text="note.text"/>
+					<mfm v-if="note.text" :text="note.cw != null ? note.cw : note.text" :author="note.user" :custom-emojis="note.emojis"/>
 				</div>
 			</div>
 		</div>
@@ -45,7 +47,7 @@ export default Vue.extend({
 	mounted() {
 		this.fetch();
 
-		this.connection = (this as any).os.stream.useSharedConnection('localTimeline');
+		this.connection = this.$root.stream.useSharedConnection('localTimeline');
 
 		this.connection.on('note', this.onNote);
 	},
@@ -57,7 +59,7 @@ export default Vue.extend({
 	methods: {
 		fetch(cb?) {
 			this.fetching = true;
-			(this as any).api('notes', {
+			this.$root.api('notes', {
 				limit: this.max,
 				local: true,
 				reply: false,
@@ -74,6 +76,7 @@ export default Vue.extend({
 			if (note.replyId != null) return;
 			if (note.renoteId != null) return;
 			if (note.poll != null) return;
+			if (note.localOnly) return;
 
 			this.notes.unshift(note);
 		},

@@ -1,8 +1,10 @@
-import $ from 'cafy'; import ID from '../../../../../misc/cafy-id';
-import Favorite from '../../../../../models/favorite';
-import Note from '../../../../../models/note';
-import { ILocalUser } from '../../../../../models/user';
-import getParams from '../../../get-params';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
+import define from '../../../define';
+import { ApiError } from '../../../error';
+import { getNote } from '../../../common/getters';
+import { NoteFavorites } from '../../../../../models';
+import { genId } from '../../../../../misc/gen-id';
 
 export const meta = {
 	stability: 'stable',
@@ -12,50 +14,59 @@ export const meta = {
 		'en-US': 'Favorite a note.'
 	},
 
+	tags: ['notes', 'favorites'],
+
 	requireCredential: true,
 
-	kind: 'favorite-write',
+	kind: 'write:favorites',
 
 	params: {
-		noteId: $.type(ID).note({
+		noteId: {
+			validator: $.type(ID),
 			desc: {
 				'ja-JP': '対象の投稿のID',
 				'en-US': 'Target note ID.'
 			}
-		})
+		}
+	},
+
+	errors: {
+		noSuchNote: {
+			message: 'No such note.',
+			code: 'NO_SUCH_NOTE',
+			id: '6dd26674-e060-4816-909a-45ba3f4da458'
+		},
+
+		alreadyFavorited: {
+			message: 'The note has already been marked as a favorite.',
+			code: 'ALREADY_FAVORITED',
+			id: 'a402c12b-34dd-41d2-97d8-4d2ffd96a1a6'
+		},
 	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) return rej(psErr);
-
+export default define(meta, async (ps, user) => {
 	// Get favoritee
-	const note = await Note.findOne({
-		_id: ps.noteId
+	const note = await getNote(ps.noteId).catch(e => {
+		if (e.id === '9725d0ce-ba28-4dde-95a7-2cbb2c15de24') throw new ApiError(meta.errors.noSuchNote);
+		throw e;
 	});
-
-	if (note === null) {
-		return rej('note not found');
-	}
 
 	// if already favorited
-	const exist = await Favorite.findOne({
-		noteId: note._id,
-		userId: user._id
+	const exist = await NoteFavorites.findOne({
+		noteId: note.id,
+		userId: user.id
 	});
 
-	if (exist !== null) {
-		return rej('already favorited');
+	if (exist != null) {
+		throw new ApiError(meta.errors.alreadyFavorited);
 	}
 
 	// Create favorite
-	await Favorite.insert({
+	await NoteFavorites.save({
+		id: genId(),
 		createdAt: new Date(),
-		noteId: note._id,
-		userId: user._id
+		noteId: note.id,
+		userId: user.id
 	});
-
-	// Send response
-	res();
 });

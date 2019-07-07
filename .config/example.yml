@@ -1,18 +1,19 @@
-name: example-instance-name # Name of your instance
-description: example-description # Description of your instance
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Misskey configuration
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-maintainer:
-  name: example-maitainer-name # Your name
-  url: http://example.com/ # Your contact (http or mailto)
-  repository_url: https://github.com/syuilo/misskey # Repository URL
-  feedback_url: https://github.com/syuilo/misskey/issues # Feedback URL (e.g. github issue)
-
+#   ┌─────┐
+#───┘ URL └─────────────────────────────────────────────────────
 
 # Final accessible URL seen by a user.
 url: https://example.tld/
 
+# ONCE YOU HAVE STARTED THE INSTANCE, DO NOT CHANGE THE
+# URL SETTINGS AFTER THAT!
 
-### Port and TLS settings ######################################
+#   ┌───────────────────────┐
+#───┘ Port and TLS settings └───────────────────────────────────
+
 #
 # Misskey supports two deployment options for public.
 #
@@ -25,7 +26,7 @@ url: https://example.tld/
 #   +------+      |+-------------+      +----------------+|
 #                 +---------------------------------------+
 #
-#   You need to setup reverse proxy. (eg. Nginx)
+#   You need to setup reverse proxy. (eg. nginx)
 #   You do not define 'https' section.
 
 # Option 2: Standalone
@@ -40,130 +41,83 @@ url: https://example.tld/
 #   You need to set Certificate in 'https' section.
 
 # To use option 1, uncomment below line.
-# port: 3000    # A port that your Misskey server should listen.
+#port: 3000    # A port that your Misskey server should listen.
 
 # To use option 2, uncomment below lines.
-# port: 443
-#
-# https:
-#   # path for certification
-#   key: /etc/letsencrypt/live/example.tld/privkey.pem
-#   cert: /etc/letsencrypt/live/example.tld/fullchain.pem
+#port: 443
 
-################################################################
+#https:
+#  # path for certification
+#  key: /etc/letsencrypt/live/example.tld/privkey.pem
+#  cert: /etc/letsencrypt/live/example.tld/fullchain.pem
 
+#   ┌──────────────────────────┐
+#───┘ PostgreSQL configuration └────────────────────────────────
 
-mongodb:
+db:
   host: localhost
-  port: 27017
+  port: 5432
+
+  # Database name
   db: misskey
+
+  # Auth
   user: example-misskey-user
   pass: example-misskey-pass
 
-# Drive capacity of a local user (MB)
-localDriveCapacityMb: 256
+  # Whether disable Caching queries
+  #disableCache: true
 
-# Drive capacity of a remote user (MB)
-remoteDriveCapacityMb: 8
+  # Extra Connection options
+  #extra:
+  #  ssl: true
 
-# If enabled:
-#  Server will not cache remote files (Using direct link instead).
-#  You can save your storage.
-#
-#  NOTE:
-#  * Users cannot see remote images when they turn off "Show media from a remote server" setting.
-#  * Since thumbnails are not provided, traffic increases.
-preventCacheRemoteFiles: false
+#   ┌─────────────────────┐
+#───┘ Redis configuration └─────────────────────────────────────
 
-drive:
-  storage: 'db'
+redis:
+  host: localhost
+  port: 6379
+  #pass: example-pass
 
-  # OR
+#   ┌─────────────────────────────┐
+#───┘ Elasticsearch configuration └─────────────────────────────
 
-  # storage: 'minio'
-  # bucket:
-  # prefix:
-  # config:
-  #   endPoint:
-  #   port:
-  #   useSSL:
-  #   accessKey:
-  #   secretKey:
-
-  # S3 example
-  # storage: 'minio'
-  # bucket: bucket-name
-  # prefix: files
-  # config:
-  #   endPoint: s3-us-west-2.amazonaws.com
-  #   region: us-west-2
-  #   useSSL: true
-  #   accessKey: XXX
-  #   secretKey: YYY
-
-  # S3 example (with CDN, custom domain)
-  # storage: 'minio'
-  # bucket: drive.example.com
-  # prefix: files
-  # baseUrl: https://drive.example.com
-  # config:
-  #   endPoint: s3-us-west-2.amazonaws.com
-  #   region: us-west-2
-  #   useSSL: true
-  #   accessKey: XXX
-  #   secretKey: YYY
-
-#
-# Below settings are optional
-#
-
-# Redis
-#redis:
-#  host: localhost
-#  port: 6379
-#  pass: example-pass
-
-# Elasticsearch
 #elasticsearch:
 #  host: localhost
 #  port: 9200
 #  pass: null
 
-# reCAPTCHA
-#recaptcha:
-#  site_key: example-site-key
-#  secret_key: example-secret-key
+#   ┌───────────────┐
+#───┘ ID generation └───────────────────────────────────────────
 
-# ServiceWorker
-#sw:
-#  # Public key of VAPID
-#  public_key: example-sw-public-key
-#
-#  # Private key of VAPID
-#  private_key: example-sw-private-key
+# You can select the ID generation method.
+# You don't usually need to change this setting, but you can
+# change it according to your preferences.
 
-# Twitter integration
-# You need to set the oauth callback url as : https://<your-misskey-instance>/api/tw/cb
-#twitter:
-#  consumer_key: example-twitter-consumer-key
-#  consumer_secret: example-twitter-consumer-secret-key
+# Available methods:
+# aid ... Short, Millisecond accuracy
+# meid ... Similar to ObjectID, Millisecond accuracy
+# ulid ... Millisecond accuracy
+# objectid ... This is left for backward compatibility
 
-# Ghost
-# Ghost account is an account used for the purpose of delegating
-# followers when putting users in the list.
-#ghost: user-id-of-your-ghost-account
+# ONCE YOU HAVE STARTED THE INSTANCE, DO NOT CHANGE THE
+# ID SETTINGS AFTER THAT!
+
+id: 'aid'
+
+#   ┌─────────────────────┐
+#───┘ Other configuration └─────────────────────────────────────
+
+# If enabled:
+#  The first account created is automatically marked as Admin.
+autoAdmin: true
+
+# Whether disable HSTS
+#disableHsts: true
 
 # Clustering
 #clusterLimit: 1
 
-# Summaly proxy
-#summalyProxy: "http://example.com"
-
-# User recommendation
-#user_recommendation:
-#  external: true
-#  engine: http://vinayaka.distsn.org/cgi-bin/vinayaka-user-match-misskey-api.cgi?{{host}}+{{user}}+{{limit}}+{{offset}}
-#  timeout: 300000
-
-# Max allowed note text length in charactors
-maxNoteTextLength: 1000
+# IP address family used for outgoing request (ipv4, ipv6 or dual)
+#outgoingAddressFamily: ipv4

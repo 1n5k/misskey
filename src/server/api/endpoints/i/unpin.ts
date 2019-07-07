@@ -1,8 +1,9 @@
-import $ from 'cafy'; import ID from '../../../../misc/cafy-id';
-import { ILocalUser } from '../../../../models/user';
-import { pack } from '../../../../models/user';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
 import { removePinned } from '../../../../services/i/pin';
-import getParams from '../../get-params';
+import define from '../../define';
+import { ApiError } from '../../error';
+import { Users } from '../../../../models';
 
 export const meta = {
 	stability: 'stable',
@@ -11,36 +12,38 @@ export const meta = {
 		'ja-JP': '指定した投稿のピン留めを解除します。'
 	},
 
+	tags: ['account', 'notes'],
+
 	requireCredential: true,
 
-	kind: 'account-write',
+	kind: 'write:account',
 
 	params: {
-		noteId: $.type(ID).note({
+		noteId: {
+			validator: $.type(ID),
 			desc: {
 				'ja-JP': '対象の投稿のID',
 				'en-US': 'Target note ID'
 			}
-		})
+		}
+	},
+
+	errors: {
+		noSuchNote: {
+			message: 'No such note.',
+			code: 'NO_SUCH_NOTE',
+			id: '454170ce-9d63-4a43-9da1-ea10afe81e21'
+		},
 	}
 };
 
-export default async (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) return rej(psErr);
-
-	// Processing
-	try {
-		await removePinned(user, ps.noteId);
-	} catch (e) {
-		return rej(e.message);
-	}
-
-	// Serialize
-	const iObj = await pack(user, user, {
-		detail: true
+export default define(meta, async (ps, user) => {
+	await removePinned(user, ps.noteId).catch(e => {
+		if (e.id === 'b302d4cf-c050-400a-bbb3-be208681f40c') throw new ApiError(meta.errors.noSuchNote);
+		throw e;
 	});
 
-	// Send response
-	res(iObj);
+	return await Users.pack(user, user, {
+		detail: true
+	});
 });

@@ -1,7 +1,9 @@
 import $ from 'cafy';
-import ID from '../../../../misc/cafy-id';
-import getParams from '../../get-params';
-import User from '../../../../models/user';
+import { ID } from '../../../../misc/cafy-id';
+import define from '../../define';
+import deleteFollowing from '../../../../services/following/delete';
+import { Users, Followings } from '../../../../models';
+import { User } from '../../../../models/entities/user';
 
 export const meta = {
 	desc: {
@@ -9,42 +11,58 @@ export const meta = {
 		'en-US': 'Suspend a user.'
 	},
 
+	tags: ['admin'],
+
 	requireCredential: true,
-	requireAdmin: true,
+	requireModerator: true,
 
 	params: {
-		userId: $.type(ID).note({
+		userId: {
+			validator: $.type(ID),
 			desc: {
 				'ja-JP': '対象のユーザーID',
 				'en-US': 'The user ID which you want to suspend'
 			}
-		}),
+		},
 	}
 };
 
-export default (params: any) => new Promise(async (res, rej) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) return rej(psErr);
-
-	const user = await User.findOne({
-		_id: ps.userId
-	});
+export default define(meta, async (ps) => {
+	const user = await Users.findOne(ps.userId as string);
 
 	if (user == null) {
-		return rej('user not found');
+		throw new Error('user not found');
 	}
 
 	if (user.isAdmin) {
-		return rej('cannot suspend admin');
+		throw new Error('cannot suspend admin');
 	}
 
-	await User.findOneAndUpdate({
-		_id: user._id
-	}, {
-			$set: {
-				isSuspended: true
-			}
+	if (user.isModerator) {
+		throw new Error('cannot suspend moderator');
+	}
+
+	await Users.update(user.id, {
+		isSuspended: true
+	});
+
+	unFollowAll(user);
+});
+
+async function unFollowAll(follower: User) {
+	const followings = await Followings.find({
+		followerId: follower.id
+	});
+
+	for (const following of followings) {
+		const followee = await Users.findOne({
+			id: following.followeeId
 		});
 
-	res();
-});
+		if (followee == null) {
+			throw `Cant find followee ${following.followeeId}`;
+		}
+
+		await deleteFollowing(follower, followee, true);
+	}
+}

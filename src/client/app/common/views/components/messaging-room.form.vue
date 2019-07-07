@@ -8,19 +8,19 @@
 		ref="textarea"
 		@keypress="onKeypress"
 		@paste="onPaste"
-		placeholder="%i18n:@input-message-here%"
-		v-autocomplete="'text'"
+		:placeholder="$t('input-message-here')"
+		v-autocomplete="{ model: 'text' }"
 	></textarea>
 	<div class="file" @click="file = null" v-if="file">{{ file.name }}</div>
 	<mk-uploader ref="uploader" @uploaded="onUploaded"/>
-	<button class="send" @click="send" :disabled="!canSend || sending" title="%i18n:@send%">
-		<template v-if="!sending">%fa:paper-plane%</template><template v-if="sending">%fa:spinner .spin%</template>
+	<button class="send" @click="send" :disabled="!canSend || sending" :title="$t('send')">
+		<template v-if="!sending"><fa icon="paper-plane"/></template><template v-if="sending"><fa icon="spinner .spin"/></template>
 	</button>
-	<button class="attach-from-local" @click="chooseFile" title="%i18n:@attach-from-local%">
-		%fa:upload%
+	<button class="attach-from-local" @click="chooseFile" :title="$t('attach-from-local')">
+		<fa icon="upload"/>
 	</button>
-	<button class="attach-from-drive" @click="chooseFileFromDrive" title="%i18n:@attach-from-drive%">
-		%fa:R folder-open%
+	<button class="attach-from-drive" @click="chooseFileFromDrive" :title="$t('attach-from-drive')">
+		<fa :icon="['far', 'folder-open']"/>
 	</button>
 	<input ref="file" type="file" @change="onChangeFile"/>
 </div>
@@ -28,10 +28,21 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import * as autosize from 'autosize';
 
 export default Vue.extend({
-	props: ['user'],
+	i18n: i18n('common/views/components/messaging-room.form.vue'),
+	props: {
+		user: {
+			type: Object,
+			requird: false,
+		},
+		group: {
+			type: Object,
+			requird: false,
+		},
+	},
 	data() {
 		return {
 			text: null,
@@ -41,7 +52,7 @@ export default Vue.extend({
 	},
 	computed: {
 		draftId(): string {
-			return this.user.id;
+			return this.user ? 'user:' + this.user.id : 'group:' + this.group.id;
 		},
 		canSend(): boolean {
 			return (this.text != null && this.text != '') || this.file != null;
@@ -83,7 +94,10 @@ export default Vue.extend({
 				}
 			} else {
 				if (items[0].kind == 'file') {
-					alert('%i18n:only-one-file-attached%');
+					this.$root.dialog({
+						type: 'error',
+						text: this.$t('only-one-file-attached')
+					});
 				}
 			}
 		},
@@ -105,7 +119,10 @@ export default Vue.extend({
 				return;
 			} else if (e.dataTransfer.files.length > 1) {
 				e.preventDefault();
-				alert('%i18n:only-one-file-attached%');
+				this.$root.dialog({
+					type: 'error',
+					text: this.$t('only-one-file-attached')
+				});
 				return;
 			}
 
@@ -129,7 +146,7 @@ export default Vue.extend({
 		},
 
 		chooseFileFromDrive() {
-			(this as any).apis.chooseDriveFile({
+			this.$chooseDriveFile({
 				multiple: false
 			}).then(file => {
 				this.file = file;
@@ -150,8 +167,9 @@ export default Vue.extend({
 
 		send() {
 			this.sending = true;
-			(this as any).api('messaging/messages/create', {
-				userId: this.user.id,
+			this.$root.api('messaging/messages/create', {
+				userId: this.user ? this.user.id : undefined,
+				groupId: this.group ? this.group.id : undefined,
 				text: this.text ? this.text : undefined,
 				fileId: this.file ? this.file.id : undefined
 			}).then(message => {

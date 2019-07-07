@@ -2,6 +2,7 @@
  * Desktop Client
  */
 
+import Vue from 'vue';
 import VueRouter from 'vue-router';
 
 // Style
@@ -11,38 +12,111 @@ import init from '../init';
 import fuckAdBlock from '../common/scripts/fuck-ad-block';
 import composeNotification from '../common/scripts/compose-notification';
 
-import chooseDriveFolder from './api/choose-drive-folder';
-import chooseDriveFile from './api/choose-drive-file';
-import dialog from './api/dialog';
-import input from './api/input';
-import post from './api/post';
-import notify from './api/notify';
-import updateAvatar from './api/update-avatar';
-import updateBanner from './api/update-banner';
-
-import MkIndex from './views/pages/index.vue';
-import MkHome from './views/pages/home.vue';
-import MkDeck from './views/pages/deck/deck.vue';
-import MkAdmin from './views/pages/admin/admin.vue';
-import MkStats from './views/pages/stats/stats.vue';
-import MkUser from './views/pages/user/user.vue';
-import MkFavorites from './views/pages/favorites.vue';
+import MkHome from './views/home/home.vue';
 import MkSelectDrive from './views/pages/selectdrive.vue';
 import MkDrive from './views/pages/drive.vue';
-import MkHomeCustomize from './views/pages/home-customize.vue';
 import MkMessagingRoom from './views/pages/messaging-room.vue';
-import MkNote from './views/pages/note.vue';
-import MkSearch from './views/pages/search.vue';
-import MkTag from './views/pages/tag.vue';
 import MkReversi from './views/pages/games/reversi.vue';
-import MkShare from './views/pages/share.vue';
+import MkShare from '../common/views/pages/share.vue';
 import MkFollow from '../common/views/pages/follow.vue';
+import MkNotFound from '../common/views/pages/not-found.vue';
+import MkSettings from './views/pages/settings.vue';
+import DeckColumn from '../common/views/deck/deck.column-template.vue';
+
+import Ctx from './views/components/context-menu.vue';
+import RenoteFormWindow from './views/components/renote-form-window.vue';
+import MkChooseFileFromDriveWindow from './views/components/choose-file-from-drive-window.vue';
+import MkChooseFolderFromDriveWindow from './views/components/choose-folder-from-drive-window.vue';
+import MkHomeTimeline from './views/home/timeline.vue';
+import Notification from './views/components/ui-notification.vue';
+
+import { url } from '../config';
 import MiOS from '../mios';
 
 /**
  * init
  */
-init(async (launch) => {
+init(async (launch, os) => {
+	Vue.mixin({
+		methods: {
+			$contextmenu(e, menu, opts?) {
+				const o = opts || {};
+				const vm = this.$root.new(Ctx, {
+					menu,
+					x: e.pageX - window.pageXOffset,
+					y: e.pageY - window.pageYOffset,
+				});
+				vm.$once('closed', () => {
+					if (o.closed) o.closed();
+				});
+			},
+
+			$post(opts) {
+				const o = opts || {};
+				if (o.renote) {
+					const vm = this.$root.new(RenoteFormWindow, {
+						note: o.renote,
+						animation: o.animation == null ? true : o.animation
+					});
+					if (o.cb) vm.$once('closed', o.cb);
+				} else {
+					this.$root.newAsync(() => import('./views/components/post-form-window.vue').then(m => m.default), {
+						reply: o.reply,
+						mention: o.mention,
+						animation: o.animation == null ? true : o.animation
+					}).then(vm => {
+						if (o.cb) vm.$once('closed', o.cb);
+					});
+				}
+			},
+
+			$chooseDriveFile(opts) {
+				return new Promise((res, rej) => {
+					const o = opts || {};
+
+					if (document.body.clientWidth > 800) {
+						const w = this.$root.new(MkChooseFileFromDriveWindow, {
+							title: o.title,
+							type: o.type,
+							multiple: o.multiple,
+							initFolder: o.currentFolder
+						});
+						w.$once('selected', file => {
+							res(file);
+						});
+					} else {
+						window['cb'] = file => {
+							res(file);
+						};
+
+						window.open(url + `/selectdrive?multiple=${o.multiple}`,
+							'choose_drive_window',
+							'height=500, width=800');
+					}
+				});
+			},
+
+			$chooseDriveFolder(opts) {
+				return new Promise((res, rej) => {
+					const o = opts || {};
+					const w = this.$root.new(MkChooseFolderFromDriveWindow, {
+						title: o.title,
+						initFolder: o.currentFolder
+					});
+					w.$once('selected', folder => {
+						res(folder);
+					});
+				});
+			},
+
+			$notify(message) {
+				this.$root.new(Notification, {
+					message
+				});
+			}
+		}
+	});
+
 	// Register directives
 	require('./views/directives');
 
@@ -54,44 +128,81 @@ init(async (launch) => {
 	const router = new VueRouter({
 		mode: 'history',
 		routes: [
-			{ path: '/', name: 'index', component: MkIndex },
-			{ path: '/home', name: 'home', component: MkHome },
-			{ path: '/deck', name: 'deck', component: MkDeck },
-			{ path: '/admin', name: 'admin', component: MkAdmin },
-			{ path: '/stats', name: 'stats', component: MkStats },
-			{ path: '/i/customize-home', component: MkHomeCustomize },
-			{ path: '/i/favorites', component: MkFavorites },
+			os.store.state.device.inDeckMode
+				? { path: '/', name: 'index', component: () => import('../common/views/deck/deck.vue').then(m => m.default), children: [
+					{ path: '/@:user', component: () => import('../common/views/deck/deck.user-column.vue').then(m => m.default), children: [
+						{ path: '', name: 'user', component: () => import('../common/views/deck/deck.user-column.home.vue').then(m => m.default) },
+						{ path: 'following', component: () => import('../common/views/pages/following.vue').then(m => m.default) },
+						{ path: 'followers', component: () => import('../common/views/pages/followers.vue').then(m => m.default) },
+					]},
+					{ path: '/notes/:note', name: 'note', component: () => import('../common/views/deck/deck.note-column.vue').then(m => m.default) },
+					{ path: '/search', component: () => import('../common/views/deck/deck.search-column.vue').then(m => m.default) },
+					{ path: '/tags/:tag', name: 'tag', component: () => import('../common/views/deck/deck.hashtag-column.vue').then(m => m.default) },
+					{ path: '/featured', name: 'featured', component: DeckColumn, props: route => ({ component: () => import('../common/views/pages/featured.vue').then(m => m.default), platform: 'deck' }) },
+					{ path: '/explore', name: 'explore', component: DeckColumn, props: route => ({ component: () => import('../common/views/pages/explore.vue').then(m => m.default) }) },
+					{ path: '/explore/tags/:tag', name: 'explore-tag', component: DeckColumn, props: route => ({ component: () => import('../common/views/pages/explore.vue').then(m => m.default), tag: route.params.tag }) },
+					{ path: '/i/favorites', component: DeckColumn, props: route => ({ component: () => import('../common/views/pages/favorites.vue').then(m => m.default), platform: 'deck' }) },
+					{ path: '/i/pages', component: DeckColumn, props: route => ({ component: () => import('../common/views/pages/pages.vue').then(m => m.default) }) },
+					{ path: '/i/lists', component: DeckColumn, props: route => ({ component: () => import('../common/views/pages/user-lists.vue').then(m => m.default) }) },
+					{ path: '/i/lists/:listId', component: DeckColumn, props: route => ({ component: () => import('../common/views/pages/user-list-editor.vue').then(m => m.default), listId: route.params.listId }) },
+					{ path: '/i/groups', component: DeckColumn, props: route => ({ component: () => import('../common/views/pages/user-groups.vue').then(m => m.default) }) },
+					{ path: '/i/groups/:groupId', component: DeckColumn, props: route => ({ component: () => import('../common/views/pages/user-group-editor.vue').then(m => m.default), groupId: route.params.groupId }) },
+					{ path: '/i/follow-requests', component: DeckColumn, props: route => ({ component: () => import('../common/views/pages/follow-requests.vue').then(m => m.default) }) },
+				]}
+				: { path: '/', component: MkHome, children: [
+					{ path: '', name: 'index', component: MkHomeTimeline },
+					{ path: '/@:user', component: () => import('./views/home/user/index.vue').then(m => m.default), children: [
+						{ path: '', name: 'user', component: () => import('./views/home/user/user.home.vue').then(m => m.default) },
+						{ path: 'following', component: () => import('../common/views/pages/following.vue').then(m => m.default) },
+						{ path: 'followers', component: () => import('../common/views/pages/followers.vue').then(m => m.default) },
+					]},
+					{ path: '/notes/:note', name: 'note', component: () => import('./views/home/note.vue').then(m => m.default) },
+					{ path: '/search', component: () => import('./views/home/search.vue').then(m => m.default) },
+					{ path: '/tags/:tag', name: 'tag', component: () => import('./views/home/tag.vue').then(m => m.default) },
+					{ path: '/featured', name: 'featured', component: () => import('../common/views/pages/featured.vue').then(m => m.default), props: { platform: 'desktop' } },
+					{ path: '/explore', name: 'explore', component: () => import('../common/views/pages/explore.vue').then(m => m.default) },
+					{ path: '/explore/tags/:tag', name: 'explore-tag', props: true, component: () => import('../common/views/pages/explore.vue').then(m => m.default) },
+					{ path: '/i/favorites', component: () => import('../common/views/pages/favorites.vue').then(m => m.default), props: { platform: 'desktop' } },
+					{ path: '/i/pages', component: () => import('../common/views/pages/pages.vue').then(m => m.default) },
+					{ path: '/i/lists', component: () => import('../common/views/pages/user-lists.vue').then(m => m.default) },
+					{ path: '/i/lists/:listId', props: true, component: () => import('../common/views/pages/user-list-editor.vue').then(m => m.default) },
+					{ path: '/i/groups', component: () => import('../common/views/pages/user-groups.vue').then(m => m.default) },
+					{ path: '/i/groups/:groupId', props: true, component: () => import('../common/views/pages/user-group-editor.vue').then(m => m.default) },
+					{ path: '/i/follow-requests', component: () => import('../common/views/pages/follow-requests.vue').then(m => m.default) },
+					{ path: '/i/pages/new', component: () => import('../common/views/pages/page-editor/page-editor.vue').then(m => m.default) },
+					{ path: '/i/pages/edit/:pageId', component: () => import('../common/views/pages/page-editor/page-editor.vue').then(m => m.default), props: route => ({ initPageId: route.params.pageId }) },
+					{ path: '/@:user/pages/:page', component: () => import('../common/views/pages/page/page.vue').then(m => m.default), props: route => ({ pageName: route.params.page, username: route.params.user }) },
+					{ path: '/@:user/pages/:pageName/view-source', component: () => import('../common/views/pages/page-editor/page-editor.vue').then(m => m.default), props: route => ({ initUser: route.params.user, initPageName: route.params.pageName }) },
+				]},
+			{ path: '/i/pages/new', component: () => import('../common/views/pages/page-editor/page-editor.vue').then(m => m.default) },
+			{ path: '/i/pages/edit/:pageId', component: () => import('../common/views/pages/page-editor/page-editor.vue').then(m => m.default), props: route => ({ initPageId: route.params.pageId }) },
+			{ path: '/@:user/pages/:page', component: () => import('../common/views/pages/page/page.vue').then(m => m.default), props: route => ({ pageName: route.params.page, username: route.params.user }) },
+			{ path: '/@:user/pages/:pageName/view-source', component: () => import('../common/views/pages/page-editor/page-editor.vue').then(m => m.default), props: route => ({ initUser: route.params.user, initPageName: route.params.pageName }) },
+			{ path: '/i/messaging/group/:group', component: MkMessagingRoom },
 			{ path: '/i/messaging/:user', component: MkMessagingRoom },
 			{ path: '/i/drive', component: MkDrive },
 			{ path: '/i/drive/folder/:folder', component: MkDrive },
+			{ path: '/i/settings', component: MkSettings },
 			{ path: '/selectdrive', component: MkSelectDrive },
-			{ path: '/search', component: MkSearch },
-			{ path: '/tags/:tag', name: 'tag', component: MkTag },
 			{ path: '/share', component: MkShare },
-			{ path: '/reversi/:game?', component: MkReversi },
-			{ path: '/@:user', name: 'user', component: MkUser },
-			{ path: '/notes/:note', name: 'note', component: MkNote },
-			{ path: '/authorize-follow', component: MkFollow }
-		]
+			{ path: '/games/reversi/:game?', component: MkReversi },
+			{ path: '/authorize-follow', component: MkFollow },
+			{ path: '/deck', redirect: '/' },
+			{ path: '*', component: MkNotFound }
+		],
+		scrollBehavior(to, from, savedPosition) {
+			return { x: 0, y: 0 };
+		}
 	});
 
 	// Launch the app
-	const [, os] = launch(router, os => ({
-		chooseDriveFolder: chooseDriveFolder(os),
-		chooseDriveFile: chooseDriveFile(os),
-		dialog: dialog(os),
-		input: input(os),
-		post: post(os),
-		notify: notify(os),
-		updateAvatar: updateAvatar(os),
-		updateBanner: updateBanner(os)
-	}));
+	const [app, _] = launch(router);
 
 	if (os.store.getters.isSignedIn) {
 		/**
 		 * Fuck AD Block
 		 */
-		fuckAdBlock(os);
+		fuckAdBlock(app);
 	}
 
 	/**

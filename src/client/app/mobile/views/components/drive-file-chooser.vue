@@ -2,12 +2,13 @@
 <div class="cdxzvcfawjxdyxsekbxbfgtplebnoneb">
 	<div class="body">
 		<header>
-			<h1>%i18n:@select-file%<span class="count" v-if="files.length > 0">({{ files.length }})</span></h1>
-			<button class="close" @click="cancel">%fa:times%</button>
-			<button v-if="multiple" class="ok" @click="ok">%fa:check%</button>
+			<h1>{{ $t('select-file') }}<span class="count" v-if="files.length > 0">({{ files.length }})</span></h1>
+			<button class="close" @click="cancel"><fa icon="times"/></button>
+			<button v-if="multiple" class="ok" @click="ok"><fa icon="check"/></button>
 		</header>
-		<mk-drive class="drive" ref="browser"
+		<x-drive class="drive" ref="browser"
 			:select-file="true"
+			:type="type"
 			:multiple="multiple"
 			@change-selection="onChangeSelection"
 			@selected="onSelected"
@@ -18,8 +19,14 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
+
 export default Vue.extend({
-	props: ['multiple'],
+	i18n: i18n('mobile/views/components/drive-file-chooser.vue'),
+	components: {
+		XDrive: () => import('./drive.vue').then(m => m.default),
+	},
+	props: ['type', 'multiple'],
 	data() {
 		return {
 			files: []

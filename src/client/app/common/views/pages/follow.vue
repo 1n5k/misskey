@@ -1,15 +1,18 @@
 <template>
 <div class="syxhndwprovvuqhmyvveewmbqayniwkv" v-if="!fetching">
-	<div class="signed-in-as" v-html="'%i18n:@signed-in-as%'.replace('{}', `<b>${myName}`)"></div>
-
+	<div class="signed-in-as">
+		<mfm :text="$t('signed-in-as').replace('{}', myName)" :should-break="false" :plain-text="true" :custom-emojis="$store.state.i.emojis"/>
+	</div>
 	<main>
 		<div class="banner" :style="bannerStyle"></div>
 		<mk-avatar class="avatar" :user="user" :disable-preview="true"/>
 		<div class="body">
-			<router-link :to="user | userPage" class="name">{{ user | userName }}</router-link>
+			<router-link :to="user | userPage" class="name">
+				<mk-user-name :user="user"/>
+			</router-link>
 			<span class="username">@{{ user | acct }}</span>
 			<div class="description">
-				<misskey-flavored-markdown v-if="user.description" :text="user.description" :i="$store.state.i"/>
+				<mfm v-if="user.description" :text="user.description" :is-note="false" :author="user" :i="$store.state.i" :custom-emojis="user.emojis"/>
 			</div>
 		</div>
 	</main>
@@ -19,23 +22,25 @@
 			@click="onClick"
 			:disabled="followWait">
 		<template v-if="!followWait">
-			<template v-if="user.hasPendingFollowRequestFromYou && user.isLocked">%fa:hourglass-half% %i18n:@request-pending%</template>
-			<template v-else-if="user.hasPendingFollowRequestFromYou && !user.isLocked">%fa:hourglass-start% %i18n:@follow-processing%</template>
-			<template v-else-if="user.isFollowing">%fa:minus% %i18n:@following%</template>
-			<template v-else-if="!user.isFollowing && user.isLocked">%fa:plus% %i18n:@follow-request%</template>
-			<template v-else-if="!user.isFollowing && !user.isLocked">%fa:plus% %i18n:@follow%</template>
+			<template v-if="user.hasPendingFollowRequestFromYou && user.isLocked"><fa icon="hourglass-half"/> {{ $t('request-pending') }}</template>
+			<template v-else-if="user.hasPendingFollowRequestFromYou && !user.isLocked"><fa icon="spinner"/> {{ $t('follow-processing') }}</template>
+			<template v-else-if="user.isFollowing"><fa icon="minus"/> {{ $t('following') }}</template>
+			<template v-else-if="!user.isFollowing && user.isLocked"><fa icon="plus"/> {{ $t('follow-request') }}</template>
+			<template v-else-if="!user.isFollowing && !user.isLocked"><fa icon="plus"/> {{ $t('follow') }}</template>
 		</template>
-		<template v-else>%fa:spinner .pulse .fw%</template>
+		<template v-else><fa icon="spinner" pulse fixed-width/></template>
 	</button>
 </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import parseAcct from '../../../../../misc/acct/parse';
 import Progress from '../../../common/scripts/loading';
 
 export default Vue.extend({
+	i18n: i18n('common/views/pages/follow.vue'),
 	data() {
 		return {
 			fetching: true,
@@ -52,7 +57,7 @@ export default Vue.extend({
 		bannerStyle(): any {
 			if (this.user.bannerUrl == null) return {};
 			return {
-				backgroundColor: this.user.bannerColor && this.user.bannerColor.length == 3 ? `rgb(${ this.user.bannerColor.join(',') })` : null,
+				backgroundColor: this.user.bannerColor,
 				backgroundImage: `url(${ this.user.bannerUrl })`
 			};
 		}
@@ -67,7 +72,7 @@ export default Vue.extend({
 			const acct = new URL(location.href).searchParams.get('acct');
 			this.fetching = true;
 			Progress.start();
-			(this as any).api('users/show', parseAcct(acct)).then(user => {
+			this.$root.api('users/show', parseAcct(acct)).then(user => {
 				this.user = user;
 				this.fetching = false;
 				Progress.done();
@@ -79,20 +84,20 @@ export default Vue.extend({
 
 			try {
 				if (this.user.isFollowing) {
-					this.user = await (this as any).api('following/delete', {
+					this.user = await this.$root.api('following/delete', {
 						userId: this.user.id
 					});
 				} else {
 					if (this.user.hasPendingFollowRequestFromYou) {
-						this.user = await (this as any).api('following/requests/cancel', {
+						this.user = await this.$root.api('following/requests/cancel', {
 							userId: this.user.id
 						});
 					} else if (this.user.isLocked) {
-						this.user = await (this as any).api('following/create', {
+						this.user = await this.$root.api('following/create', {
 							userId: this.user.id
 						});
 					} else {
-						this.user = await (this as any).api('following/create', {
+						this.user = await this.$root.api('following/create', {
 							userId: this.user.id
 						});
 					}
@@ -123,6 +128,7 @@ export default Vue.extend({
 	> .signed-in-as
 		margin-bottom 16px
 		font-size 14px
+		font-weight bold
 
 	> main
 		margin-bottom 16px

@@ -1,41 +1,42 @@
 import $ from 'cafy';
-import App, { pack } from '../../../../models/app';
-import { ILocalUser } from '../../../../models/user';
+import define from '../../define';
+import { Apps } from '../../../../models';
 
 export const meta = {
+	tags: ['account', 'app'],
+
 	desc: {
 		'ja-JP': '自分のアプリケーション一覧を取得します。',
 		'en-US': 'Get my apps'
 	},
 
-	requireCredential: true
+	requireCredential: true,
+
+	params: {
+		limit: {
+			validator: $.optional.num.range(1, 100),
+			default: 10
+		},
+
+		offset: {
+			validator: $.optional.num.min(0),
+			default: 0
+		}
+	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'limit' parameter
-	const [limit = 10, limitErr] = $.num.optional.range(1, 100).get(params.limit);
-	if (limitErr) return rej('invalid limit param');
-
-	// Get 'offset' parameter
-	const [offset = 0, offsetErr] = $.num.optional.min(0).get(params.offset);
-	if (offsetErr) return rej('invalid offset param');
-
+export default define(meta, async (ps, user) => {
 	const query = {
-		userId: user._id
+		userId: user.id
 	};
 
-	// Execute query
-	const apps = await App
-		.find(query, {
-			limit: limit,
-			skip: offset,
-			sort: {
-				_id: -1
-			}
-		});
+	const apps = await Apps.find({
+		where: query,
+		take: ps.limit!,
+		skip: ps.offset,
+	});
 
-	// Reply
-	res(await Promise.all(apps.map(app => pack(app, user, {
+	return await Promise.all(apps.map(app => Apps.pack(app, user, {
 		detail: true
-	}))));
+	})));
 });

@@ -1,9 +1,10 @@
-import $ from 'cafy'; import ID from '../../../../../misc/cafy-id';
-import DriveFile from '../../../../../models/drive-file';
-import del from '../../../../../services/drive/delete-file';
-import { publishDriveStream } from '../../../../../stream';
-import { ILocalUser } from '../../../../../models/user';
-import getParams from '../../../get-params';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
+import { deleteFile } from '../../../../../services/drive/delete-file';
+import { publishDriveStream } from '../../../../../services/stream';
+import define from '../../../define';
+import { ApiError } from '../../../error';
+import { DriveFiles } from '../../../../../models';
 
 export const meta = {
 	stability: 'stable',
@@ -13,40 +14,51 @@ export const meta = {
 		'en-US': 'Delete a file of drive.'
 	},
 
+	tags: ['drive'],
+
 	requireCredential: true,
 
-	kind: 'drive-write',
+	kind: 'write:drive',
 
 	params: {
-		fileId: $.type(ID).note({
+		fileId: {
+			validator: $.type(ID),
 			desc: {
 				'ja-JP': '対象のファイルID',
 				'en-US': 'Target file ID'
 			}
-		})
+		}
+	},
+
+	errors: {
+		noSuchFile: {
+			message: 'No such file.',
+			code: 'NO_SUCH_FILE',
+			id: '908939ec-e52b-4458-b395-1025195cea58'
+		},
+
+		accessDenied: {
+			message: 'Access denied.',
+			code: 'ACCESS_DENIED',
+			id: '5eb8d909-2540-4970-90b8-dd6f86088121'
+		},
 	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) return rej(psErr);
+export default define(meta, async (ps, user) => {
+	const file = await DriveFiles.findOne(ps.fileId);
 
-	// Fetch file
-	const file = await DriveFile
-		.findOne({
-			_id: ps.fileId,
-			'metadata.userId': user._id
-		});
+	if (file == null) {
+		throw new ApiError(meta.errors.noSuchFile);
+	}
 
-	if (file === null) {
-		return rej('file-not-found');
+	if (!user.isAdmin && !user.isModerator && (file.userId !== user.id)) {
+		throw new ApiError(meta.errors.accessDenied);
 	}
 
 	// Delete
-	await del(file);
+	await deleteFile(file);
 
 	// Publish fileDeleted event
-	publishDriveStream(user._id, 'fileDeleted', file._id);
-
-	res();
+	publishDriveStream(user.id, 'fileDeleted', file.id);
 });

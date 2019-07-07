@@ -3,8 +3,8 @@
 	<div class="banner" :style="{ backgroundImage: banner ? `url(${banner})` : null }"></div>
 
 	<button @click="dark">
-		<template v-if="$store.state.device.darkmode">%fa:moon%</template>
-		<template v-else>%fa:R moon%</template>
+		<template v-if="$store.state.device.darkmode"><fa icon="moon"/></template>
+		<template v-else><fa :icon="['far', 'moon']"/></template>
 	</button>
 
 	<mk-forkit class="forkit"/>
@@ -13,44 +13,45 @@
 		<div class="body">
 			<div class="main block">
 				<div>
-					<h1 v-if="name != 'Misskey'">{{ name }}</h1>
-					<h1 v-else><img svg-inline src="../../../../assets/title.svg" :alt="name"></h1>
+					<h1 v-if="name != null && name != ''">{{ name }}</h1>
+					<h1 v-else><img svg-inline src="../../../../assets/title.svg" alt="Misskey"></h1>
 
 					<div class="info">
-						<span><b>{{ host }}</b> - <span v-html="'%i18n:@powered-by-misskey%'"></span></span>
+						<span><b>{{ host }}</b> - <span v-html="$t('powered-by-misskey')"></span></span>
 						<span class="stats" v-if="stats">
-							<span>%fa:user% {{ stats.originalUsersCount | number }}</span>
-							<span>%fa:pencil-alt% {{ stats.originalNotesCount | number }}</span>
+							<span><fa icon="user"/> {{ stats.originalUsersCount | number }}</span>
+							<span><fa icon="pencil-alt"/> {{ stats.originalNotesCount | number }}</span>
 						</span>
 					</div>
 
 					<div class="desc">
-						<span class="desc" v-html="description || '%i18n:common.about%'"></span>
-						<a class="about" @click="about">%i18n:@about%</a>
+						<span class="desc" v-html="description || $t('@.about')"></span>
+						<a class="about" @click="about">{{ $t('about') }}</a>
 					</div>
 
 					<p class="sign">
-						<span class="signup" @click="signup">%i18n:@signup%</span>
+						<span class="signup" @click="signup">{{ $t('@.signup') }}</span>
 						<span class="divider">|</span>
-						<span class="signin" @click="signin">%i18n:@signin%</span>
+						<span class="signin" @click="signin">{{ $t('@.signin') }}</span>
 					</p>
 
-					<img src="/assets/ai.png" alt="" title="藍" class="char">
+					<img v-if="meta" :src="meta.mascotImageUrl" alt="" title="藍" class="char">
 				</div>
 			</div>
 
 			<div class="announcements block">
-				<header>%fa:broadcast-tower% %i18n:@announcements%</header>
+				<header><fa icon="broadcast-tower"/> {{ $t('announcements') }}</header>
 				<div v-if="announcements && announcements.length > 0">
 					<div v-for="announcement in announcements">
 						<h1 v-html="announcement.title"></h1>
-						<div v-html="announcement.text"></div>
+						<mfm :text="announcement.text"/>
+						<img v-if="announcement.image" :src="announcement.image" alt="" style="display: block; max-height: 130px; max-width: 100%;"/>
 					</div>
 				</div>
 			</div>
 
 			<div class="photos block">
-				<header>%fa:images% %i18n:@photos%</header>
+				<header><fa :icon="['far', 'images']"/> {{ $t('photos') }}</header>
 				<div>
 					<div v-for="photo in photos" :style="`background-image: url(${photo.thumbnailUrl})`"></div>
 				</div>
@@ -76,18 +77,18 @@
 				</div>
 
 				<div class="tl block">
-					<header>%fa:comment-alt R% %i18n:@timeline%</header>
+					<header><fa :icon="['far', 'comment-alt']"/> {{ $t('timeline') }}</header>
 					<div>
 						<mk-welcome-timeline class="tl" :max="20"/>
 					</div>
 				</div>
 
 				<div class="info block">
-					<header>%fa:info-circle% %i18n:@info%</header>
+					<header><fa icon="info-circle"/> {{ $t('info') }}</header>
 					<div>
 						<div v-if="meta" class="body">
 							<p>Version: <b>{{ meta.version }}</b></p>
-							<p>Maintainer: <b><a :href="meta.maintainer.url" target="_blank">{{ meta.maintainer.name }}</a></b></p>
+							<p>Maintainer: <b><a :href="'mailto:' + meta.maintainerEmail" target="_blank">{{ meta.maintainerName }}</a></b></p>
 						</div>
 					</div>
 				</div>
@@ -97,50 +98,50 @@
 
 	<modal name="about" class="about modal" width="800px" height="auto" scrollable>
 		<article class="fpdezooorhntlzyeszemrsqdlgbysvxq">
-			<h1>%i18n:common.intro.title%</h1>
-			<p v-html="'%i18n:common.intro.about%'"></p>
+			<h1>{{ $t('@.intro.title') }}</h1>
+			<p v-html="this.$t('@.intro.about')"></p>
 			<section>
-				<h2>%i18n:common.intro.features%</h2>
+				<h2>{{ $t('@.intro.features') }}</h2>
 				<section>
 					<div class="body">
-						<h3>%i18n:common.intro.rich-contents%</h3>
-						<p v-html="'%i18n:common.intro.rich-contents-desc%'"></p>
+						<h3>{{ $t('@.intro.rich-contents') }}</h3>
+						<p v-html="this.$t('@.intro.rich-contents-desc')"></p>
 					</div>
 					<div class="image"><img src="/assets/about/post.png" alt=""></div>
 				</section>
 				<section>
 					<div class="body">
-						<h3>%i18n:common.intro.reaction%</h3>
-						<p v-html="'%i18n:common.intro.reaction-desc%'"></p>
+						<h3>{{ $t('@.intro.reaction') }}</h3>
+						<p v-html="this.$t('@.intro.reaction-desc')"></p>
 					</div>
 					<div class="image"><img src="/assets/about/reaction.png" alt=""></div>
 				</section>
 				<section>
 					<div class="body">
-						<h3>%i18n:common.intro.ui%</h3>
-						<p v-html="'%i18n:common.intro.ui-desc%'"></p>
+						<h3>{{ $t('@.intro.ui') }}</h3>
+						<p v-html="this.$t('@.intro.ui-desc')"></p>
 					</div>
 					<div class="image"><img src="/assets/about/ui.png" alt=""></div>
 				</section>
 				<section>
 					<div class="body">
-						<h3>%i18n:common.intro.drive%</h3>
-						<p v-html="'%i18n:common.intro.drive-desc%'"></p>
+						<h3>{{ $t('@.intro.drive') }}</h3>
+						<p v-html="this.$t('@.intro.drive-desc')"></p>
 					</div>
 					<div class="image"><img src="/assets/about/drive.png" alt=""></div>
 				</section>
 			</section>
-			<p v-html="'%i18n:common.intro.outro%'"></p>
+			<p v-html="this.$t('@.intro.outro')"></p>
 		</article>
 	</modal>
 
 	<modal name="signup" class="modal" width="450px" height="auto" scrollable>
-		<header class="formHeader">%i18n:@signup%</header>
+		<header class="formHeader">{{ $t('@.signup') }}</header>
 		<mk-signup class="form"/>
 	</modal>
 
 	<modal name="signin" class="modal" width="450px" height="auto" scrollable>
-		<header class="formHeader">%i18n:@signin%</header>
+		<header class="formHeader">{{ $t('@.signin') }}</header>
 		<mk-signin class="form"/>
 	</modal>
 </div>
@@ -148,18 +149,21 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import { host, copyright } from '../../../config';
 import { concat } from '../../../../../prelude/array';
+import { toUnicode } from 'punycode';
 
 export default Vue.extend({
+	i18n: i18n('desktop/views/pages/welcome.vue'),
 	data() {
 		return {
 			meta: null,
 			stats: null,
 			banner: null,
 			copyright,
-			host,
-			name: 'Misskey',
+			host: toUnicode(host),
+			name: null,
 			description: '',
 			announcements: [],
 			photos: []
@@ -167,25 +171,27 @@ export default Vue.extend({
 	},
 
 	created() {
-		(this as any).os.getMeta().then(meta => {
+		this.$root.getMeta().then(meta => {
 			this.meta = meta;
 			this.name = meta.name;
 			this.description = meta.description;
-			this.announcements = meta.broadcasts;
+			this.announcements = meta.announcements;
 			this.banner = meta.bannerUrl;
 		});
 
-		(this as any).api('stats').then(stats => {
+		this.$root.api('stats').then(stats => {
 			this.stats = stats;
 		});
 
 		const image = [
 			'image/jpeg',
 			'image/png',
-			'image/gif'
+			'image/gif',
+			'image/apng',
+			'image/vnd.mozilla.apng',
 		];
 
-		(this as any).api('notes/local-timeline', {
+		this.$root.api('notes/local-timeline', {
 			fileType: image,
 			excludeNsfw: true,
 			limit: 6
@@ -341,8 +347,6 @@ export default Vue.extend({
 		.block
 			color var(--text)
 			background var(--face)
-			box-shadow var(--shadow)
-			//border-radius 8px
 			overflow auto
 
 			> header
@@ -350,7 +354,7 @@ export default Vue.extend({
 				padding 0 16px
 				line-height 48px
 				background var(--faceHeader)
-				box-shadow 0 1px 0px rgba(0, 0, 0, 0.1)
+				box-shadow 0 1px 0 rgba(0, 0, 0, 0.1)
 
 				& + div
 					max-height calc(100% - 48px)
@@ -368,7 +372,6 @@ export default Vue.extend({
 			> .main
 				grid-row 1
 				grid-column 1 / 3
-				border-top solid 5px var(--primary)
 
 				> div
 					padding 32px

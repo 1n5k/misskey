@@ -1,5 +1,5 @@
-import User, { pack, ILocalUser } from '../../../models/user';
-import { IApp } from '../../../models/app';
+import define from '../define';
+import { Users } from '../../../models';
 
 export const meta = {
 	stability: 'stable',
@@ -8,30 +8,25 @@ export const meta = {
 		'ja-JP': '自分のアカウント情報を取得します。'
 	},
 
+	tags: ['account'],
+
 	requireCredential: true,
 
 	params: {},
 
 	res: {
-		type: 'entity',
-		entity: 'User'
-	}
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		ref: 'User',
+	},
 };
 
-export default (params: any, user: ILocalUser, app: IApp) => new Promise(async (res, rej) => {
+export default define(meta, async (ps, user, app) => {
 	const isSecure = user != null && app == null;
 
-	// Serialize
-	res(await pack(user, user, {
+	return await Users.pack(user, user, {
 		detail: true,
 		includeHasUnreadNotes: true,
 		includeSecrets: isSecure
-	}));
-
-	// Update lastUsedAt
-	User.update({ _id: user._id }, {
-		$set: {
-			lastUsedAt: new Date()
-		}
 	});
 });

@@ -1,46 +1,90 @@
 <template>
-<div class="ui-input" :class="[{ focused, filled }, styl]">
+<div class="ui-input" :class="[{ focused, filled, inline, disabled }, styl]">
 	<div class="icon" ref="icon"><slot name="icon"></slot></div>
 	<div class="input">
 		<div class="password-meter" v-if="withPasswordMeter" v-show="passwordStrength != ''" :data-strength="passwordStrength">
 			<div class="value" ref="passwordMetar"></div>
 		</div>
 		<span class="label" ref="label"><slot></slot></span>
+		<span class="title" ref="title"><slot name="title"></slot></span>
 		<div class="prefix" ref="prefix"><slot name="prefix"></slot></div>
 		<template v-if="type != 'file'">
-			<input ref="input"
-					:type="type"
-					v-model="v"
-					:required="required"
-					:readonly="readonly"
-					:pattern="pattern"
-					:autocomplete="autocomplete"
-					:spellcheck="spellcheck"
-					@focus="focused = true"
-					@blur="focused = false">
+			<input v-if="debounce" ref="input"
+				v-debounce="500"
+				:type="type"
+				v-model.lazy="v"
+				:disabled="disabled"
+				:required="required"
+				:readonly="readonly"
+				:placeholder="placeholder"
+				:pattern="pattern"
+				:autocomplete="autocomplete"
+				:spellcheck="spellcheck"
+				@focus="focused = true"
+				@blur="focused = false"
+				@keydown="$emit('keydown', $event)"
+				@change="$emit('change', $event)"
+				:list="id"
+			>
+			<input v-else ref="input"
+				:type="type"
+				v-model="v"
+				:disabled="disabled"
+				:required="required"
+				:readonly="readonly"
+				:placeholder="placeholder"
+				:pattern="pattern"
+				:autocomplete="autocomplete"
+				:spellcheck="spellcheck"
+				@focus="focused = true"
+				@blur="focused = false"
+				@keydown="$emit('keydown', $event)"
+				@change="$emit('change', $event)"
+				:list="id"
+			>
+			<datalist :id="id" v-if="datalist">
+				<option v-for="data in datalist" :value="data"/>
+			</datalist>
 		</template>
 		<template v-else>
 			<input ref="input"
-					type="text"
-					:value="placeholder"
-					readonly
-					@click="chooseFile">
+				type="text"
+				:value="filePlaceholder"
+				readonly
+				@click="chooseFile"
+			>
 			<input ref="file"
-					type="file"
-					:value="value"
-					@change="onChangeFile">
+				type="file"
+				:value="value"
+				@change="onChangeFile"
+			>
 		</template>
 		<div class="suffix" ref="suffix"><slot name="suffix"></slot></div>
 	</div>
-	<div class="text"><slot name="text"></slot></div>
+	<div class="toggle" v-if="withPasswordToggle">
+		<a @click="togglePassword">
+			<span v-if="type == 'password'"><fa :icon="['fa', 'eye']"/> {{ $t('@.show-password') }}</span>
+			<span v-if="type != 'password'"><fa :icon="['far', 'eye-slash']"/> {{ $t('@.hide-password') }}</span>
+		</a>
+	</div>
+	<div class="desc"><slot name="desc"></slot></div>
 </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import debounce from 'v-debounce';
 const getPasswordStrength = require('syuilo-password-strength');
 
 export default Vue.extend({
+	directives: {
+		debounce
+	},
+	inject: {
+		horizonGrouped: {
+			default: false
+		}
+	},
 	props: {
 		value: {
 			required: false
@@ -57,9 +101,22 @@ export default Vue.extend({
 			type: Boolean,
 			required: false
 		},
+		disabled: {
+			type: Boolean,
+			required: false
+		},
 		pattern: {
 			type: String,
 			required: false
+		},
+		placeholder: {
+			type: String,
+			required: false
+		},
+		autofocus: {
+			type: Boolean,
+			required: false,
+			default: false
 		},
 		autocomplete: {
 			required: false
@@ -67,10 +124,29 @@ export default Vue.extend({
 		spellcheck: {
 			required: false
 		},
+		debounce: {
+			required: false
+		},
 		withPasswordMeter: {
 			type: Boolean,
 			required: false,
 			default: false
+		},
+		withPasswordToggle: {
+			type: Boolean,
+			required: false,
+			default: false
+		},
+		datalist: {
+			type: Array,
+			required: false,
+		},
+		inline: {
+			type: Boolean,
+			required: false,
+			default(): boolean {
+				return this.horizonGrouped;
+			}
 		},
 		styl: {
 			type: String,
@@ -82,14 +158,15 @@ export default Vue.extend({
 		return {
 			v: this.value,
 			focused: false,
-			passwordStrength: ''
+			passwordStrength: '',
+			id: Math.random().toString()
 		};
 	},
 	computed: {
 		filled(): boolean {
 			return this.v != '' && this.v != null;
 		},
-		placeholder(): string {
+		filePlaceholder(): string {
 			if (this.type != 'file') return null;
 			if (this.v == null) return null;
 
@@ -107,7 +184,11 @@ export default Vue.extend({
 			this.v = v;
 		},
 		v(v) {
-			this.$emit('input', v);
+			if (this.type === 'number') {
+				this.$emit('input', parseInt(v, 10));
+			} else {
+				this.$emit('input', v);
+			}
 
 			if (this.withPasswordMeter) {
 				if (v == '') {
@@ -122,23 +203,50 @@ export default Vue.extend({
 		}
 	},
 	mounted() {
+		if (this.autofocus) {
+			this.$nextTick(() => {
+				this.$refs.input.focus();
+			});
+		}
+
 		this.$nextTick(() => {
-			if (this.$refs.prefix) {
-				this.$refs.label.style.left = (this.$refs.prefix.offsetLeft + this.$refs.prefix.offsetWidth) + 'px';
-				if (this.$refs.prefix.offsetWidth) {
-					this.$refs.input.style.paddingLeft = this.$refs.prefix.offsetWidth + 'px';
+			// このコンポーネントが作成された時、非表示状態である場合がある
+			// 非表示状態だと要素の幅などは0になってしまうので、定期的に計算する
+			const clock = setInterval(() => {
+				if (this.$refs.prefix) {
+					this.$refs.label.style.left = (this.$refs.prefix.offsetLeft + this.$refs.prefix.offsetWidth) + 'px';
+					if (this.$refs.prefix.offsetWidth) {
+						this.$refs.input.style.paddingLeft = this.$refs.prefix.offsetWidth + 'px';
+					}
 				}
-			}
-			if (this.$refs.suffix) {
-				if (this.$refs.suffix.offsetWidth) {
-					this.$refs.input.style.paddingRight = this.$refs.suffix.offsetWidth + 'px';
+				if (this.$refs.suffix) {
+					if (this.$refs.suffix.offsetWidth) {
+						this.$refs.input.style.paddingRight = this.$refs.suffix.offsetWidth + 'px';
+					}
 				}
+			}, 100);
+
+			this.$once('hook:beforeDestroy', () => {
+				clearInterval(clock);
+			});
+		});
+
+		this.$on('keydown', (e: KeyboardEvent) => {
+			if (e.code == 'Enter') {
+				this.$emit('enter');
 			}
 		});
 	},
 	methods: {
 		focus() {
 			this.$refs.input.focus();
+		},
+		togglePassword() {
+			if (this.type == 'password') {
+				this.type = 'text'
+			} else {
+				this.type = 'password'
+			}
 		},
 		chooseFile() {
 			this.$refs.file.click();
@@ -222,7 +330,7 @@ root(fill)
 
 			> .value
 				display block
-				width 0%
+				width 0
 				height 100%
 				background transparent
 				border-radius 6px
@@ -243,6 +351,20 @@ root(fill)
 			//will-change transform
 			transform-origin top left
 			transform scale(1)
+
+		> .title
+			position absolute
+			z-index 1
+			top fill ? -24px : -17px
+			left 0 !important
+			pointer-events none
+			font-size 16px
+			line-height 32px
+			color var(--inputLabel)
+			pointer-events none
+			//will-change transform
+			transform-origin top left
+			transform scale(.75)
 
 		> input
 			display block
@@ -283,7 +405,7 @@ root(fill)
 				display none
 
 			> *
-				display block
+				display inline-block
 				min-width 16px
 				max-width 150px
 				overflow hidden
@@ -304,9 +426,23 @@ root(fill)
 			if fill
 				padding-right 12px
 
-	> .text
+	> .toggle
+		cursor pointer
+		padding-left 0.5em
+		font-size 0.7em
+		opacity 0.7
+		text-align left
+
+		> a
+			color var(--inputLabel)
+			text-decoration none
+
+	> .desc
 		margin 6px 0
 		font-size 13px
+
+		&:empty
+			display none
 
 		*
 			margin 0
@@ -336,5 +472,15 @@ root(fill)
 		root(true)
 	&:not(.fill)
 		root(false)
+
+	&.inline
+		display inline-block
+		margin 0
+
+	&.disabled
+		opacity 0.7
+
+		&, *
+			cursor not-allowed !important
 
 </style>

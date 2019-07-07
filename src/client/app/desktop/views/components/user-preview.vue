@@ -4,32 +4,36 @@
 		<div class="banner" :style="u.bannerUrl ? `background-image: url(${u.bannerUrl})` : ''"></div>
 		<mk-avatar class="avatar" :user="u" :disable-preview="true"/>
 		<div class="title">
-			<router-link class="name" :to="u | userPage">{{ u | userName }}</router-link>
+			<router-link class="name" :to="u | userPage"><mk-user-name :user="u"/></router-link>
 			<p class="username"><mk-acct :user="u"/></p>
 		</div>
-		<div class="description">{{ u.description }}</div>
+		<div class="description">
+			<mfm v-if="u.description" :text="u.description" :author="u" :i="$store.state.i" :custom-emojis="u.emojis"/>
+		</div>
 		<div class="status">
 			<div>
-				<p>%i18n:@notes%</p><span>{{ u.notesCount }}</span>
+				<p>{{ $t('notes') }}</p><span>{{ u.notesCount }}</span>
 			</div>
 			<div>
-				<p>%i18n:@following%</p><span>{{ u.followingCount }}</span>
+				<p>{{ $t('following') }}</p><span>{{ u.followingCount }}</span>
 			</div>
 			<div>
-				<p>%i18n:@followers%</p><span>{{ u.followersCount }}</span>
+				<p>{{ $t('followers') }}</p><span>{{ u.followersCount }}</span>
 			</div>
 		</div>
-		<mk-follow-button v-if="$store.getters.isSignedIn && u.id != $store.state.i.id" :user="u"/>
+		<mk-follow-button class="follow-button" v-if="$store.getters.isSignedIn && u.id != $store.state.i.id" :user="u" mini/>
 	</template>
 </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
-import * as anime from 'animejs';
+import i18n from '../../../i18n';
+import anime from 'animejs';
 import parseAcct from '../../../../../misc/acct/parse';
 
 export default Vue.extend({
+	i18n: i18n('desktop/views/components/user-preview.vue'),
 	props: {
 		user: {
 			type: [Object, String],
@@ -52,7 +56,7 @@ export default Vue.extend({
 				parseAcct(this.user.substr(1)) :
 				{ userId: this.user };
 
-			(this as any).api('users/show', query).then(user => {
+			this.$root.api('users/show', query).then(user => {
 				this.u = user;
 				this.open();
 			});
@@ -152,9 +156,9 @@ export default Vue.extend({
 				font-size 1em
 				color var(--primary)
 
-	> .mk-follow-button
+	> .follow-button
 		position absolute
-		top 92px
+		top 8px
 		right 8px
 
 </style>

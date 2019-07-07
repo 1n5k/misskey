@@ -1,44 +1,79 @@
-import $ from 'cafy'; import ID from '../../../../misc/cafy-id';
-import Note, { packMany, INote } from '../../../../models/note';
-import { ILocalUser } from '../../../../models/user';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
+import define from '../../define';
+import { ApiError } from '../../error';
+import { getNote } from '../../common/getters';
+import { Note } from '../../../../models/entities/note';
+import { Notes } from '../../../../models';
 
-/**
- * Show conversation of a note
- */
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'noteId' parameter
-	const [noteId, noteIdErr] = $.type(ID).get(params.noteId);
-	if (noteIdErr) return rej('invalid noteId param');
+export const meta = {
+	desc: {
+		'ja-JP': '指定した投稿の文脈を取得します。',
+		'en-US': 'Show conversation of a note.'
+	},
 
-	// Get 'limit' parameter
-	const [limit = 10, limitErr] = $.num.optional.range(1, 100).get(params.limit);
-	if (limitErr) return rej('invalid limit param');
+	tags: ['notes'],
 
-	// Get 'offset' parameter
-	const [offset = 0, offsetErr] = $.num.optional.min(0).get(params.offset);
-	if (offsetErr) return rej('invalid offset param');
+	requireCredential: false,
 
-	// Lookup note
-	const note = await Note.findOne({
-		_id: noteId
+	params: {
+		noteId: {
+			validator: $.type(ID),
+			desc: {
+				'ja-JP': '対象の投稿のID',
+				'en-US': 'Target note ID'
+			}
+		},
+
+		limit: {
+			validator: $.optional.num.range(1, 100),
+			default: 10
+		},
+
+		offset: {
+			validator: $.optional.num.min(0),
+			default: 0
+		},
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'Note',
+		}
+	},
+
+	errors: {
+		noSuchNote: {
+			message: 'No such note.',
+			code: 'NO_SUCH_NOTE',
+			id: 'e1035875-9551-45ec-afa8-1ded1fcb53c8'
+		}
+	}
+};
+
+export default define(meta, async (ps, user) => {
+	const note = await getNote(ps.noteId).catch(e => {
+		if (e.id === '9725d0ce-ba28-4dde-95a7-2cbb2c15de24') throw new ApiError(meta.errors.noSuchNote);
+		throw e;
 	});
 
-	if (note === null) {
-		return rej('note not found');
-	}
-
-	const conversation: INote[] = [];
+	const conversation: Note[] = [];
 	let i = 0;
 
 	async function get(id: any) {
 		i++;
-		const p = await Note.findOne({ _id: id });
+		const p = await Notes.findOne(id);
+		if (p == null) return;
 
-		if (i > offset) {
+		if (i > ps.offset!) {
 			conversation.push(p);
 		}
 
-		if (conversation.length == limit) {
+		if (conversation.length == ps.limit!) {
 			return;
 		}
 
@@ -51,6 +86,5 @@ export default (params: any, user: ILocalUser) => new Promise(async (res, rej) =
 		await get(note.replyId);
 	}
 
-	// Serialize
-	res(await packMany(conversation, user));
+	return await Notes.packMany(conversation, user);
 });

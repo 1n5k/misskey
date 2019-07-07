@@ -1,6 +1,8 @@
-import $ from 'cafy'; import ID from '../../../../misc/cafy-id';
-import Favorite, { packMany } from '../../../../models/favorite';
-import { ILocalUser } from '../../../../models/user';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
+import define from '../../define';
+import { NoteFavorites } from '../../../../models';
+import { makePaginationQuery } from '../../common/make-pagination-query';
 
 export const meta = {
 	desc: {
@@ -8,52 +10,46 @@ export const meta = {
 		'en-US': 'Get favorited notes'
 	},
 
+	tags: ['account', 'notes', 'favorites'],
+
 	requireCredential: true,
 
-	kind: 'favorites-read'
+	kind: 'read:favorites',
+
+	params: {
+		limit: {
+			validator: $.optional.num.range(1, 100),
+			default: 10
+		},
+
+		sinceId: {
+			validator: $.optional.type(ID),
+		},
+
+		untilId: {
+			validator: $.optional.type(ID),
+		},
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'NoteFavorite',
+		}
+	},
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'limit' parameter
-	const [limit = 10, limitErr] = $.num.optional.range(1, 100).get(params.limit);
-	if (limitErr) return rej('invalid limit param');
+export default define(meta, async (ps, user) => {
+	const query = makePaginationQuery(NoteFavorites.createQueryBuilder('favorite'), ps.sinceId, ps.untilId)
+		.andWhere(`favorite.userId = :meId`, { meId: user.id })
+		.leftJoinAndSelect('favorite.note', 'note');
 
-	// Get 'sinceId' parameter
-	const [sinceId, sinceIdErr] = $.type(ID).optional.get(params.sinceId);
-	if (sinceIdErr) return rej('invalid sinceId param');
+	const favorites = await query
+		.take(ps.limit!)
+		.getMany();
 
-	// Get 'untilId' parameter
-	const [untilId, untilIdErr] = $.type(ID).optional.get(params.untilId);
-	if (untilIdErr) return rej('invalid untilId param');
-
-	// Check if both of sinceId and untilId is specified
-	if (sinceId && untilId) {
-		return rej('cannot set sinceId and untilId');
-	}
-
-	const query = {
-		userId: user._id
-	} as any;
-
-	const sort = {
-		_id: -1
-	};
-
-	if (sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: sinceId
-		};
-	} else if (untilId) {
-		query._id = {
-			$lt: untilId
-		};
-	}
-
-	// Get favorites
-	const favorites = await Favorite
-		.find(query, { limit, sort });
-
-	// Serialize
-	res(await packMany(favorites, user));
+	return await NoteFavorites.packMany(favorites, user);
 });

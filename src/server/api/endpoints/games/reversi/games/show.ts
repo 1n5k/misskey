@@ -1,33 +1,49 @@
-import $ from 'cafy'; import ID from '../../../../../../misc/cafy-id';
-import ReversiGame, { pack } from '../../../../../../models/games/reversi/game';
+import $ from 'cafy';
+import { ID } from '../../../../../../misc/cafy-id';
 import Reversi from '../../../../../../games/reversi/core';
-import { ILocalUser } from '../../../../../../models/user';
+import define from '../../../../define';
+import { ApiError } from '../../../../error';
+import { ReversiGames } from '../../../../../../models';
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'gameId' parameter
-	const [gameId, gameIdErr] = $.type(ID).get(params.gameId);
-	if (gameIdErr) return rej('invalid gameId param');
+export const meta = {
+	tags: ['games'],
 
-	const game = await ReversiGame.findOne({ _id: gameId });
+	params: {
+		gameId: {
+			validator: $.type(ID),
+		},
+	},
+
+	errors: {
+		noSuchGame: {
+			message: 'No such game.',
+			code: 'NO_SUCH_GAME',
+			id: 'f13a03db-fae1-46c9-87f3-43c8165419e1'
+		},
+	}
+};
+
+export default define(meta, async (ps, user) => {
+	const game = await ReversiGames.findOne(ps.gameId);
 
 	if (game == null) {
-		return rej('game not found');
+		throw new ApiError(meta.errors.noSuchGame);
 	}
 
-	const o = new Reversi(game.settings.map, {
-		isLlotheo: game.settings.isLlotheo,
-		canPutEverywhere: game.settings.canPutEverywhere,
-		loopedBoard: game.settings.loopedBoard
+	const o = new Reversi(game.map, {
+		isLlotheo: game.isLlotheo,
+		canPutEverywhere: game.canPutEverywhere,
+		loopedBoard: game.loopedBoard
 	});
 
-	game.logs.forEach(log => {
+	for (const log of game.logs) {
 		o.put(log.color, log.pos);
-	});
+	}
 
-	const packed = await pack(game, user);
+	const packed = await ReversiGames.pack(game, user);
 
-	res(Object.assign({
+	return Object.assign({
 		board: o.board,
 		turn: o.turn
-	}, packed));
+	}, packed);
 });

@@ -1,77 +1,103 @@
-import * as mongo from 'mongodb';
-import isObjectId from '../../../misc/is-objectid';
-import Message from '../../../models/messaging-message';
-import { IMessagingMessage as IMessage } from '../../../models/messaging-message';
-import { publishMainStream } from '../../../stream';
-import { publishMessagingStream } from '../../../stream';
-import { publishMessagingIndexStream } from '../../../stream';
-import User from '../../../models/user';
+import { publishMainStream, publishGroupMessagingStream } from '../../../services/stream';
+import { publishMessagingStream } from '../../../services/stream';
+import { publishMessagingIndexStream } from '../../../services/stream';
+import { User } from '../../../models/entities/user';
+import { MessagingMessage } from '../../../models/entities/messaging-message';
+import { MessagingMessages, UserGroupJoinings, Users } from '../../../models';
+import { In } from 'typeorm';
+import { IdentifiableError } from '../../../misc/identifiable-error';
+import { UserGroup } from '../../../models/entities/user-group';
 
 /**
  * Mark messages as read
  */
-export default (
-	user: string | mongo.ObjectID,
-	otherparty: string | mongo.ObjectID,
-	message: string | string[] | IMessage | IMessage[] | mongo.ObjectID | mongo.ObjectID[]
-) => new Promise<any>(async (resolve, reject) => {
+export async function readUserMessagingMessage(
+	userId: User['id'],
+	otherpartyId: User['id'],
+	messageIds: MessagingMessage['id'][]
+) {
+	if (messageIds.length === 0) return;
 
-	const userId = isObjectId(user)
-		? user
-		: new mongo.ObjectID(user);
+	const messages = await MessagingMessages.find({
+		id: In(messageIds)
+	});
 
-	const otherpartyId = isObjectId(otherparty)
-		? otherparty
-		: new mongo.ObjectID(otherparty);
-
-	const ids: mongo.ObjectID[] = Array.isArray(message)
-		? isObjectId(message[0])
-			? (message as mongo.ObjectID[])
-			: typeof message[0] === 'string'
-				? (message as string[]).map(m => new mongo.ObjectID(m))
-				: (message as IMessage[]).map(m => m._id)
-		: isObjectId(message)
-			? [(message as mongo.ObjectID)]
-			: typeof message === 'string'
-				? [new mongo.ObjectID(message)]
-				: [(message as IMessage)._id];
+	for (const message of messages) {
+		if (message.recipientId !== userId) {
+			throw new IdentifiableError('e140a4bf-49ce-4fb6-b67c-b78dadf6b52f', 'Access denied (user).');
+		}
+	}
 
 	// Update documents
-	await Message.update({
-		_id: { $in: ids },
+	await MessagingMessages.update({
+		id: In(messageIds),
 		userId: otherpartyId,
 		recipientId: userId,
 		isRead: false
 	}, {
-			$set: {
-				isRead: true
-			}
-		}, {
-			multi: true
-		});
+		isRead: true
+	});
 
 	// Publish event
-	publishMessagingStream(otherpartyId, userId, 'read', ids.map(id => id.toString()));
-	publishMessagingIndexStream(userId, 'read', ids.map(id => id.toString()));
+	publishMessagingStream(otherpartyId, userId, 'read', messageIds);
+	publishMessagingIndexStream(userId, 'read', messageIds);
 
-	// Calc count of my unread messages
-	const count = await Message
-		.count({
-			recipientId: userId,
-			isRead: false
-		}, {
-				limit: 1
-			});
-
-	if (count == 0) {
-		// Update flag
-		User.update({ _id: userId }, {
-			$set: {
-				hasUnreadMessagingMessage: false
-			}
-		});
-
+	if (!await Users.getHasUnreadMessagingMessage(userId)) {
 		// 全ての(いままで未読だった)自分宛てのメッセージを(これで)読みましたよというイベントを発行
 		publishMainStream(userId, 'readAllMessagingMessages');
 	}
-});
+}
+
+/**
+ * Mark messages as read
+ */
+export async function readGroupMessagingMessage(
+	userId: User['id'],
+	groupId: UserGroup['id'],
+	messageIds: MessagingMessage['id'][]
+) {
+	if (messageIds.length === 0) return;
+
+	// check joined
+	const joining = await UserGroupJoinings.findOne({
+		userId: userId,
+		userGroupId: groupId
+	});
+
+	if (joining == null) {
+		throw new IdentifiableError('930a270c-714a-46b2-b776-ad27276dc569', 'Access denied (group).');
+	}
+
+	const messages = await MessagingMessages.find({
+		id: In(messageIds)
+	});
+
+	const reads = [];
+
+	for (const message of messages) {
+		if (message.userId === userId) continue;
+		if (message.reads.includes(userId)) continue;
+
+		// Update document
+		await MessagingMessages.createQueryBuilder().update()
+			.set({
+				reads: (() => `array_append("reads", '${joining.userId}')`) as any
+			})
+			.where('id = :id', { id: message.id })
+			.execute();
+
+		reads.push(message.id);
+	}
+
+	// Publish event
+	publishGroupMessagingStream(groupId, 'read', {
+		ids: reads,
+		userId: userId
+	});
+	publishMessagingIndexStream(userId, 'read', reads);
+
+	if (!await Users.getHasUnreadMessagingMessage(userId)) {
+		// 全ての(いままで未読だった)自分宛てのメッセージを(これで)読みましたよというイベントを発行
+		publishMainStream(userId, 'readAllMessagingMessages');
+	}
+}

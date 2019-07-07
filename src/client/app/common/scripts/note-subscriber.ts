@@ -26,7 +26,7 @@ export default prop => ({
 
 	created() {
 		if (this.$store.getters.isSignedIn) {
-			this.connection = (this as any).os.stream;
+			this.connection = this.$root.stream;
 		}
 	},
 
@@ -87,15 +87,16 @@ export default prop => ({
 				case 'reacted': {
 					const reaction = body.reaction;
 
-					if (this.$_ns_target.reactionCounts == null) {
-						Vue.set(this.$_ns_target, 'reactionCounts', {});
+					if (this.$_ns_target.reactions == null) {
+						Vue.set(this.$_ns_target, 'reactions', {});
 					}
 
-					if (this.$_ns_target.reactionCounts[reaction] == null) {
-						Vue.set(this.$_ns_target.reactionCounts, reaction, 0);
+					if (this.$_ns_target.reactions[reaction] == null) {
+						Vue.set(this.$_ns_target.reactions, reaction, 0);
 					}
 
-					this.$_ns_target.reactionCounts[reaction]++;
+					// Increment the count
+					this.$_ns_target.reactions[reaction]++;
 
 					if (body.userId == this.$store.state.i.id) {
 						Vue.set(this.$_ns_target, 'myReaction', reaction);
@@ -103,17 +104,39 @@ export default prop => ({
 					break;
 				}
 
+				case 'unreacted': {
+					const reaction = body.reaction;
+
+					if (this.$_ns_target.reactions == null) {
+						return;
+					}
+
+					if (this.$_ns_target.reactions[reaction] == null) {
+						return;
+					}
+
+					// Decrement the count
+					if (this.$_ns_target.reactions[reaction] > 0) this.$_ns_target.reactions[reaction]--;
+
+					if (body.userId == this.$store.state.i.id) {
+						Vue.set(this.$_ns_target, 'myReaction', null);
+					}
+					break;
+				}
+
 				case 'pollVoted': {
-					if (body.userId == this.$store.state.i.id) return;
 					const choice = body.choice;
-					this.$_ns_target.poll.choices.find(c => c.id === choice).votes++;
+					this.$_ns_target.poll.choices[choice].votes++;
+					if (body.userId == this.$store.state.i.id) {
+						Vue.set(this.$_ns_target.poll.choices[choice], 'isVoted', true);
+					}
 					break;
 				}
 
 				case 'deleted': {
 					Vue.set(this.$_ns_target, 'deletedAt', body.deletedAt);
+					Vue.set(this.$_ns_target, 'renote', null);
 					this.$_ns_target.text = null;
-					this.$_ns_target.tags = [];
 					this.$_ns_target.fileIds = [];
 					this.$_ns_target.poll = null;
 					this.$_ns_target.geo = null;
@@ -121,8 +144,6 @@ export default prop => ({
 					break;
 				}
 			}
-
-			this.$emit(`update:${prop}`, this.$_ns_note_);
 		},
 	}
 });

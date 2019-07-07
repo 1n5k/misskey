@@ -1,92 +1,101 @@
-import $ from 'cafy'; import ID from '../../../../misc/cafy-id';
-import Notification from '../../../../models/notification';
-import Mute from '../../../../models/mute';
-import { packMany } from '../../../../models/notification';
-import { getFriendIds } from '../../common/get-friends';
-import read from '../../common/read-notification';
-import { ILocalUser } from '../../../../models/user';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
+import { readNotification } from '../../common/read-notification';
+import define from '../../define';
+import { makePaginationQuery } from '../../common/make-pagination-query';
+import { Notifications, Followings, Mutings } from '../../../../models';
 
-/**
- * Get notifications
- */
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'following' parameter
-	const [following = false, followingError] =
-		$.bool.optional.get(params.following);
-	if (followingError) return rej('invalid following param');
+export const meta = {
+	desc: {
+		'ja-JP': '通知一覧を取得します。',
+		'en-US': 'Get notifications.'
+	},
 
-	// Get 'markAsRead' parameter
-	const [markAsRead = true, markAsReadErr] = $.bool.optional.get(params.markAsRead);
-	if (markAsReadErr) return rej('invalid markAsRead param');
+	tags: ['account', 'notifications'],
 
-	// Get 'limit' parameter
-	const [limit = 10, limitErr] = $.num.optional.range(1, 100).get(params.limit);
-	if (limitErr) return rej('invalid limit param');
+	requireCredential: true,
 
-	// Get 'sinceId' parameter
-	const [sinceId, sinceIdErr] = $.type(ID).optional.get(params.sinceId);
-	if (sinceIdErr) return rej('invalid sinceId param');
+	kind: 'read:notifications',
 
-	// Get 'untilId' parameter
-	const [untilId, untilIdErr] = $.type(ID).optional.get(params.untilId);
-	if (untilIdErr) return rej('invalid untilId param');
+	params: {
+		limit: {
+			validator: $.optional.num.range(1, 100),
+			default: 10
+		},
 
-	// Check if both of sinceId and untilId is specified
-	if (sinceId && untilId) {
-		return rej('cannot set sinceId and untilId');
+		sinceId: {
+			validator: $.optional.type(ID),
+		},
+
+		untilId: {
+			validator: $.optional.type(ID),
+		},
+
+		following: {
+			validator: $.optional.bool,
+			default: false
+		},
+
+		markAsRead: {
+			validator: $.optional.bool,
+			default: true
+		},
+
+		includeTypes: {
+			validator: $.optional.arr($.str.or(['follow', 'mention', 'reply', 'renote', 'quote', 'reaction', 'pollVote', 'receiveFollowRequest'])),
+			default: [] as string[]
+		},
+
+		excludeTypes: {
+			validator: $.optional.arr($.str.or(['follow', 'mention', 'reply', 'renote', 'quote', 'reaction', 'pollVote', 'receiveFollowRequest'])),
+			default: [] as string[]
+		}
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'Notification',
+		}
+	},
+};
+
+export default define(meta, async (ps, user) => {
+	const followingQuery = Followings.createQueryBuilder('following')
+		.select('following.followeeId')
+		.where('following.followerId = :followerId', { followerId: user.id });
+
+	const mutingQuery = Mutings.createQueryBuilder('muting')
+		.select('muting.muteeId')
+		.where('muting.muterId = :muterId', { muterId: user.id });
+
+	const query = makePaginationQuery(Notifications.createQueryBuilder('notification'), ps.sinceId, ps.untilId)
+		.andWhere(`notification.notifieeId = :meId`, { meId: user.id })
+		.leftJoinAndSelect('notification.notifier', 'notifier');
+
+	query.andWhere(`notification.notifierId NOT IN (${ mutingQuery.getQuery() })`);
+	query.setParameters(mutingQuery.getParameters());
+
+	if (ps.following) {
+		query.andWhere(`((notification.notifierId IN (${ followingQuery.getQuery() })) OR (notification.notifierId = :meId))`, { meId: user.id });
+		query.setParameters(followingQuery.getParameters());
 	}
 
-	const mute = await Mute.find({
-		muterId: user._id
-	});
-
-	const query = {
-		notifieeId: user._id,
-		$and: [{
-			notifierId: {
-				$nin: mute.map(m => m.muteeId)
-			}
-		}]
-	} as any;
-
-	const sort = {
-		_id: -1
-	};
-
-	if (following) {
-		// ID list of the user itself and other users who the user follows
-		const followingIds = await getFriendIds(user._id);
-
-		query.$and.push({
-			notifierId: {
-				$in: followingIds
-			}
-		});
+	if (ps.includeTypes!.length > 0) {
+		query.andWhere(`notification.type IN (:...includeTypes)`, { includeTypes: ps.includeTypes });
+	} else if (ps.excludeTypes!.length > 0) {
+		query.andWhere(`notification.type NOT IN (:...excludeTypes)`, { excludeTypes: ps.excludeTypes });
 	}
 
-	if (sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: sinceId
-		};
-	} else if (untilId) {
-		query._id = {
-			$lt: untilId
-		};
-	}
-
-	// Issue query
-	const notifications = await Notification
-		.find(query, {
-			limit: limit,
-			sort: sort
-		});
-
-	// Serialize
-	res(await packMany(notifications));
+	const notifications = await query.take(ps.limit!).getMany();
 
 	// Mark all as read
-	if (notifications.length > 0 && markAsRead) {
-		read(user._id, notifications);
+	if (notifications.length > 0 && ps.markAsRead) {
+		readNotification(user.id, notifications.map(x => x.id));
 	}
+
+	return await Notifications.packMany(notifications);
 });

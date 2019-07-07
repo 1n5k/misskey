@@ -1,30 +1,33 @@
 import $ from 'cafy';
 import * as bcrypt from 'bcryptjs';
-import User, { ILocalUser } from '../../../../../models/user';
+import define from '../../../define';
+import { UserProfiles } from '../../../../../models';
+import { ensure } from '../../../../../prelude/ensure';
 
 export const meta = {
 	requireCredential: true,
-	secure: true
+
+	secure: true,
+
+	params: {
+		password: {
+			validator: $.str
+		}
+	}
 };
 
-export default async (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'password' parameter
-	const [password, passwordErr] = $.str.get(params.password);
-	if (passwordErr) return rej('invalid password param');
+export default define(meta, async (ps, user) => {
+	const profile = await UserProfiles.findOne(user.id).then(ensure);
 
 	// Compare password
-	const same = await bcrypt.compare(password, user.password);
+	const same = await bcrypt.compare(ps.password, profile.password!);
 
 	if (!same) {
-		return rej('incorrect password');
+		throw new Error('incorrect password');
 	}
 
-	await User.update(user._id, {
-		$set: {
-			'twoFactorSecret': null,
-			'twoFactorEnabled': false
-		}
+	await UserProfiles.update({ userId: user.id }, {
+		twoFactorSecret: null,
+		twoFactorEnabled: false
 	});
-
-	res();
 });

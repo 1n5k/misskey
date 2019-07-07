@@ -1,7 +1,7 @@
 import $ from 'cafy';
-import ID from '../../../../misc/cafy-id';
-import getParams from '../../get-params';
-import User from '../../../../models/user';
+import { ID } from '../../../../misc/cafy-id';
+import define from '../../define';
+import { Users } from '../../../../models';
 
 export const meta = {
 	desc: {
@@ -9,38 +9,30 @@ export const meta = {
 		'en-US': 'Unsuspend a user.'
 	},
 
+	tags: ['admin'],
+
 	requireCredential: true,
-	requireAdmin: true,
+	requireModerator: true,
 
 	params: {
-		userId: $.type(ID).note({
+		userId: {
+			validator: $.type(ID),
 			desc: {
 				'ja-JP': '対象のユーザーID',
 				'en-US': 'The user ID which you want to unsuspend'
 			}
-		}),
+		},
 	}
 };
 
-export default (params: any) => new Promise(async (res, rej) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) return rej(psErr);
-
-	const user = await User.findOne({
-		_id: ps.userId
-	});
+export default define(meta, async (ps) => {
+	const user = await Users.findOne(ps.userId as string);
 
 	if (user == null) {
-		return rej('user not found');
+		throw new Error('user not found');
 	}
 
-	await User.findOneAndUpdate({
-		_id: user._id
-	}, {
-			$set: {
-				isSuspended: false
-			}
-		});
-
-	res();
+	await Users.update(user.id, {
+		isSuspended: false
+	});
 });

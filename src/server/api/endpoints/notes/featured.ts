@@ -1,8 +1,7 @@
 import $ from 'cafy';
-import Note from '../../../../models/note';
-import { packMany } from '../../../../models/note';
-import { ILocalUser } from '../../../../models/user';
-import getParams from '../../get-params';
+import define from '../../define';
+import { generateMuteQuery } from '../../common/generate-mute-query';
+import { Notes } from '../../../../models';
 
 export const meta = {
 	desc: {
@@ -10,40 +9,44 @@ export const meta = {
 		'en-US': 'Get featured notes.'
 	},
 
+	tags: ['notes'],
+
 	requireCredential: false,
 
 	params: {
-		limit: $.num.optional.range(1, 30).note({
+		limit: {
+			validator: $.optional.num.range(1, 30),
 			default: 10,
 			desc: {
 				'ja-JP': '最大数'
 			}
-		})
-	}
+		}
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'Note',
+		}
+	},
 };
 
-export default async (params: any, user: ILocalUser) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) throw psErr;
+export default define(meta, async (ps, user) => {
+	const day = 1000 * 60 * 60 * 24 * 3; // 3日前まで
 
-	const day = 1000 * 60 * 60 * 24;
+	const query = Notes.createQueryBuilder('note')
+		.addSelect('note.score')
+		.where('note.userHost IS NULL')
+		.andWhere(`note.createdAt > :date`, { date: new Date(Date.now() - day) })
+		.andWhere(`note.visibility = 'public'`)
+		.leftJoinAndSelect('note.user', 'user');
 
-	const notes = await Note
-		.find({
-			createdAt: {
-				$gt: new Date(Date.now() - day)
-			},
-			deletedAt: null,
-			visibility: { $in: ['public', 'home'] }
-		}, {
-			limit: ps.limit,
-			sort: {
-				score: -1
-			},
-			hint: {
-				score: -1
-			}
-		});
+	if (user) generateMuteQuery(query, user);
 
-	return await packMany(notes, user);
-};
+	const notes = await query.orderBy('note.score', 'DESC').take(ps.limit!).getMany();
+
+	return await Notes.packMany(notes, user);
+});

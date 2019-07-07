@@ -1,13 +1,16 @@
 <template>
 <div class="mk-google">
 	<input type="search" v-model="query" :placeholder="q">
-	<button @click="search">%fa:search% %i18n:common.search%</button>
+	<button @click="search"><fa icon="search"/> {{ $t('@.search') }}</button>
 </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
+
 export default Vue.extend({
+	i18n: i18n(),
 	props: ['q'],
 	data() {
 		return {
@@ -19,7 +22,10 @@ export default Vue.extend({
 	},
 	methods: {
 		search() {
-			window.open(`https://www.google.com/?#q=${this.query}`, '_blank');
+			const engine = this.$store.state.settings.webSearchEngine ||
+				'https://www.google.com/?#q={{query}}';
+			const url = engine.replace('{{query}}', this.query)
+			window.open(url, '_blank');
 		}
 	}
 });

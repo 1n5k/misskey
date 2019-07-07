@@ -1,6 +1,6 @@
-import DriveFile from '../../../models/drive-file';
-import { ILocalUser } from '../../../models/user';
-import config from '../../../config';
+import define from '../define';
+import { fetchMeta } from '../../../misc/fetch-meta';
+import { DriveFiles } from '../../../models';
 
 export const meta = {
 	desc: {
@@ -8,38 +8,36 @@ export const meta = {
 		'en-US': 'Get drive information.'
 	},
 
+	tags: ['drive', 'account'],
+
 	requireCredential: true,
 
-	kind: 'drive-read'
+	kind: 'read:drive',
+
+	res: {
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		properties: {
+			capacity: {
+				type: 'number' as const,
+				optional: false as const, nullable: false as const,
+			},
+			usage: {
+				type: 'number' as const,
+				optional: false as const, nullable: false as const,
+			}
+		}
+	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Calculate drive usage
-	const usage = await DriveFile
-		.aggregate([{
-			$match: {
-				'metadata.userId': user._id,
-				'metadata.deletedAt': { $exists: false }
-			}
-		}, {
-			$project: {
-				length: true
-			}
-		}, {
-			$group: {
-				_id: null,
-				usage: { $sum: '$length' }
-			}
-		}])
-		.then((aggregates: any[]) => {
-			if (aggregates.length > 0) {
-				return aggregates[0].usage;
-			}
-			return 0;
-		});
+export default define(meta, async (ps, user) => {
+	const instance = await fetchMeta(true);
 
-	res({
-		capacity: 1024 * 1024 * config.localDriveCapacityMb,
+	// Calculate drive usage
+	const usage = await DriveFiles.clacDriveUsageOf(user);
+
+	return {
+		capacity: 1024 * 1024 * instance.localDriveCapacityMb,
 		usage: usage
-	});
+	};
 });

@@ -1,24 +1,41 @@
 import $ from 'cafy';
-import AuthSess, { pack } from '../../../../../models/auth-session';
-import { ILocalUser } from '../../../../../models/user';
+import define from '../../../define';
+import { ApiError } from '../../../error';
+import { AuthSessions } from '../../../../../models';
 
-/**
- * Show a session
- */
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'token' parameter
-	const [token, tokenErr] = $.str.get(params.token);
-	if (tokenErr) return rej('invalid token param');
+export const meta = {
+	tags: ['auth'],
 
+	requireCredential: false,
+
+	params: {
+		token: {
+			validator: $.str,
+			desc: {
+				'ja-JP': 'セッションのトークン',
+				'en-US': 'The token of a session.'
+			}
+		}
+	},
+
+	errors: {
+		noSuchSession: {
+			message: 'No such session.',
+			code: 'NO_SUCH_SESSION',
+			id: 'bd72c97d-eba7-4adb-a467-f171b8847250'
+		}
+	}
+};
+
+export default define(meta, async (ps, user) => {
 	// Lookup session
-	const session = await AuthSess.findOne({
-		token: token
+	const session = await AuthSessions.findOne({
+		token: ps.token
 	});
 
 	if (session == null) {
-		return rej('session not found');
+		throw new ApiError(meta.errors.noSuchSession);
 	}
 
-	// Response
-	res(await pack(session, user));
+	return await AuthSessions.pack(session, user);
 });

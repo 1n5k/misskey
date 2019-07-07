@@ -1,12 +1,12 @@
 <template>
-<div class="zlrxdaqttccpwhpaagdmkawtzklsccam" :class="{ smart: $store.state.device.postStyle == 'smart' }">
+<div class="zlrxdaqttccpwhpaagdmkawtzklsccam" :class="{ smart: $store.state.device.postStyle == 'smart', mini: narrow }">
 	<mk-avatar class="avatar" :user="note.user" v-if="$store.state.device.postStyle != 'smart'"/>
 	<div class="main">
 		<mk-note-header class="header" :note="note" :mini="true"/>
 		<div class="body">
 			<p v-if="note.cw != null" class="cw">
-				<span class="text" v-if="note.cw != ''">{{ note.cw }}</span>
-				<mk-cw-button v-model="showContent"/>
+				<mfm v-if="note.cw != ''" class="text" :text="note.cw" :author="note.user" :i="$store.state.i" :custom-emojis="note.emojis" />
+				<mk-cw-button v-model="showContent" :note="note"/>
 			</p>
 			<div class="content" v-show="note.cw == null || showContent">
 				<mk-sub-note-content class="text" :note="note"/>
@@ -32,6 +32,12 @@ export default Vue.extend({
 		}
 	},
 
+	inject: {
+		narrow: {
+			default: false
+		}
+	},
+
 	data() {
 		return {
 			showContent: false
@@ -47,14 +53,28 @@ export default Vue.extend({
 	font-size 10px
 	background var(--subNoteBg)
 
-	@media (min-width 350px)
-		font-size 12px
+	&:not(.mini)
 
-	@media (min-width 500px)
-		font-size 14px
+		@media (min-width 350px)
+			font-size 12px
 
-	@media (min-width 600px)
-		padding 24px 32px
+		@media (min-width 500px)
+			font-size 14px
+
+		@media (min-width 600px)
+			padding 24px 32px
+
+		> .avatar
+
+			@media (min-width 350px)
+				margin-right 10px
+				width 42px
+				height 42px
+
+			@media (min-width 500px)
+				margin-right 14px
+				width 50px
+				height 50px
 
 	&.smart
 		> .main
@@ -70,16 +90,6 @@ export default Vue.extend({
 		width 38px
 		height 38px
 		border-radius 8px
-
-		@media (min-width 350px)
-			margin-right 10px
-			width 42px
-			height 42px
-
-		@media (min-width 500px)
-			margin-right 14px
-			width 50px
-			height 50px
 
 	> .main
 		flex 1
@@ -105,6 +115,7 @@ export default Vue.extend({
 					margin 0
 					padding 0
 					color var(--subNoteText)
+					font-size calc(1em + var(--fontSize))
 
 					pre
 						max-height 120px

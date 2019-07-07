@@ -1,8 +1,8 @@
 import $ from 'cafy';
-import ID from '../../../../../misc/cafy-id';
-import UserList, { pack } from '../../../../../models/user-list';
-import { ILocalUser } from '../../../../../models/user';
-import getParams from '../../../get-params';
+import { ID } from '../../../../../misc/cafy-id';
+import define from '../../../define';
+import { ApiError } from '../../../error';
+import { UserLists } from '../../../../../models';
 
 export const meta = {
 	desc: {
@@ -10,47 +10,53 @@ export const meta = {
 		'en-US': 'Update a user list'
 	},
 
+	tags: ['lists'],
+
 	requireCredential: true,
 
-	kind: 'account-write',
+	kind: 'write:account',
 
 	params: {
-		listId: $.type(ID).note({
+		listId: {
+			validator: $.type(ID),
 			desc: {
 				'ja-JP': '対象となるユーザーリストのID',
 				'en-US': 'ID of target user list'
 			}
-		}),
-		title: $.str.range(1, 100).note({
+		},
+
+		name: {
+			validator: $.str.range(1, 100),
 			desc: {
 				'ja-JP': 'このユーザーリストの名前',
 				'en-US': 'name of this user list'
 			}
-		})
+		}
+	},
+
+	errors: {
+		noSuchList: {
+			message: 'No such list.',
+			code: 'NO_SUCH_LIST',
+			id: '796666fe-3dff-4d39-becb-8a5932c1d5b7'
+		},
 	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) return rej(psErr);
-
+export default define(meta, async (ps, user) => {
 	// Fetch the list
-	const userList = await UserList.findOne({
-		_id: ps.listId,
-		userId: user._id
+	const userList = await UserLists.findOne({
+		id: ps.listId,
+		userId: user.id
 	});
 
 	if (userList == null) {
-		return rej('list not found');
+		throw new ApiError(meta.errors.noSuchList);
 	}
 
-	// update
-	await UserList.update({ _id: userList._id }, {
-		$set: {
-			title: ps.title
-		}
+	await UserLists.update(userList.id, {
+		name: ps.name
 	});
 
-	// Response
-	res(await pack(userList._id));
+	return await UserLists.pack(userList.id);
 });

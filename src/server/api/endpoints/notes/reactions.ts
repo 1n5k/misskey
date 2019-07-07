@@ -1,8 +1,9 @@
-import $ from 'cafy'; import ID from '../../../../misc/cafy-id';
-import Note from '../../../../models/note';
-import Reaction, { pack } from '../../../../models/note-reaction';
-import { ILocalUser } from '../../../../models/user';
-import getParams from '../../get-params';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
+import define from '../../define';
+import { getNote } from '../../common/getters';
+import { ApiError } from '../../error';
+import { NoteReactions } from '../../../../models';
 
 export const meta = {
 	desc: {
@@ -10,76 +11,75 @@ export const meta = {
 		'en-US': 'Show reactions of a note.'
 	},
 
+	tags: ['notes', 'reactions'],
+
 	requireCredential: false,
 
 	params: {
-		noteId: $.type(ID).note({
+		noteId: {
+			validator: $.type(ID),
 			desc: {
 				'ja-JP': '対象の投稿のID',
 				'en-US': 'The ID of the target note'
 			}
-		}),
+		},
 
-		limit: $.num.optional.range(1, 100).note({
+		limit: {
+			validator: $.optional.num.range(1, 100),
 			default: 10
-		}),
+		},
 
-		offset: $.num.optional.note({
+		offset: {
+			validator: $.optional.num,
 			default: 0
-		}),
+		},
 
-		sinceId: $.type(ID).optional.note({
-		}),
+		sinceId: {
+			validator: $.optional.type(ID),
+		},
 
-		untilId: $.type(ID).optional.note({
-		}),
+		untilId: {
+			validator: $.optional.type(ID),
+		},
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'NoteReaction',
+		}
+	},
+
+	errors: {
+		noSuchNote: {
+			message: 'No such note.',
+			code: 'NO_SUCH_NOTE',
+			id: '263fff3d-d0e1-4af4-bea7-8408059b451a'
+		}
 	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) return rej(psErr);
-
-	// Check if both of sinceId and untilId is specified
-	if (ps.sinceId && ps.untilId) {
-		return rej('cannot set sinceId and untilId');
-	}
-
-	// Lookup note
-	const note = await Note.findOne({
-		_id: ps.noteId
+export default define(meta, async (ps, user) => {
+	const note = await getNote(ps.noteId).catch(e => {
+		if (e.id === '9725d0ce-ba28-4dde-95a7-2cbb2c15de24') throw new ApiError(meta.errors.noSuchNote);
+		throw e;
 	});
 
-	if (note === null) {
-		return rej('note not found');
-	}
-
 	const query = {
-		noteId: note._id
-	} as any;
-
-	const sort = {
-		_id: -1
+		noteId: note.id
 	};
 
-	if (ps.sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: ps.sinceId
-		};
-	} else if (ps.untilId) {
-		query._id = {
-			$lt: ps.untilId
-		};
-	}
+	const reactions = await NoteReactions.find({
+		where: query,
+		take: ps.limit!,
+		skip: ps.offset,
+		order: {
+			id: -1
+		}
+	});
 
-	const reactions = await Reaction
-		.find(query, {
-			limit: ps.limit,
-			skip: ps.offset,
-			sort: sort
-		});
-
-	// Serialize
-	res(await Promise.all(reactions.map(reaction => pack(reaction, user))));
+	return await Promise.all(reactions.map(reaction => NoteReactions.pack(reaction, user)));
 });

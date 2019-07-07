@@ -1,50 +1,84 @@
 import rndstr from 'rndstr';
 import $ from 'cafy';
-import App, { pack } from '../../../../models/app';
-import { ILocalUser } from '../../../../models/user';
+import define from '../../define';
+import { Apps } from '../../../../models';
+import { genId } from '../../../../misc/gen-id';
+import { unique } from '../../../../prelude/array';
 
 export const meta = {
-	requireCredential: false
+	tags: ['app'],
+
+	requireCredential: false,
+
+	desc: {
+		'ja-JP': 'アプリを作成します。',
+		'en-US': 'Create a application.'
+	},
+
+	params: {
+		name: {
+			validator: $.str,
+			desc: {
+				'ja-JP': 'アプリの名前',
+				'en-US': 'Name of application'
+			}
+		},
+
+		description: {
+			validator: $.str,
+			desc: {
+				'ja-JP': 'アプリの説明',
+				'en-US': 'Description of application'
+			}
+		},
+
+		permission: {
+			validator: $.arr($.str).unique(),
+			desc: {
+				'ja-JP': 'このアプリに割り当てる権限（権限については"Permissions"を参照）',
+				'en-US': 'Permissions assigned to this app (see "Permissions" for the permissions)'
+			}
+		},
+
+		// TODO: Check it is valid url
+		callbackUrl: {
+			validator: $.optional.nullable.str,
+			default: null as any,
+			desc: {
+				'ja-JP': 'アプリ認証時にコールバックするURL',
+				'en-US': 'URL to call back at app authentication'
+			}
+		},
+	},
+
+	res: {
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		ref: 'App',
+	},
 };
 
-/**
- * Create an app
- */
-export default async (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'name' parameter
-	const [name, nameErr] = $.str.get(params.name);
-	if (nameErr) return rej('invalid name param');
-
-	// Get 'description' parameter
-	const [description, descriptionErr] = $.str.get(params.description);
-	if (descriptionErr) return rej('invalid description param');
-
-	// Get 'permission' parameter
-	const [permission, permissionErr] = $.arr($.str).unique().get(params.permission);
-	if (permissionErr) return rej('invalid permission param');
-
-	// Get 'callbackUrl' parameter
-	// TODO: Check it is valid url
-	const [callbackUrl = null, callbackUrlErr] = $.str.optional.nullable.get(params.callbackUrl);
-	if (callbackUrlErr) return rej('invalid callbackUrl param');
-
+export default define(meta, async (ps, user) => {
 	// Generate secret
 	const secret = rndstr('a-zA-Z0-9', 32);
 
+	// for backward compatibility
+	const permission = unique(ps.permission.map(v => v.replace(/^(.+)(\/|-)(read|write)$/, '$3:$1')));
+
 	// Create account
-	const app = await App.insert({
+	const app = await Apps.save({
+		id: genId(),
 		createdAt: new Date(),
-		userId: user && user._id,
-		name: name,
-		description: description,
-		permission: permission,
-		callbackUrl: callbackUrl,
+		userId: user ? user.id : null,
+		name: ps.name,
+		description: ps.description,
+		permission,
+		callbackUrl: ps.callbackUrl,
 		secret: secret
 	});
 
-	// Response
-	res(await pack(app, null, {
+	return await Apps.pack(app, null, {
 		detail: true,
 		includeSecret: true
-	}));
+	});
 });

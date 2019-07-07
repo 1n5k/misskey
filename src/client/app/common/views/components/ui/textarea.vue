@@ -1,5 +1,5 @@
 <template>
-<div class="ui-textarea" :class="{ focused, filled, tall }">
+<div class="ui-textarea" :class="{ focused, filled, tall, pre }">
 	<div class="input">
 		<span class="label" ref="label"><slot></slot></span>
 		<textarea ref="input"
@@ -13,13 +13,12 @@
 			@blur="focused = false"
 		></textarea>
 	</div>
-	<div class="text"><slot name="text"></slot></div>
+	<div class="desc"><slot name="desc"></slot></div>
 </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
-const getPasswordStrength = require('syuilo-password-strength');
 
 export default Vue.extend({
 	props: {
@@ -43,6 +42,11 @@ export default Vue.extend({
 			required: false
 		},
 		tall: {
+			type: Boolean,
+			required: false,
+			default: false
+		},
+		pre: {
 			type: Boolean,
 			required: false,
 			default: false
@@ -127,6 +131,8 @@ root(fill)
 		> textarea
 			display block
 			width 100%
+			min-width 100%
+			max-width 100%
 			min-height 100px
 			padding 0
 			font inherit
@@ -139,9 +145,13 @@ root(fill)
 			outline none
 			box-shadow none
 
-	> .text
+	> .desc
 		margin 6px 0
 		font-size 13px
+		opacity 0.7
+
+		&:empty
+			display none
 
 		*
 			margin 0
@@ -169,6 +179,11 @@ root(fill)
 		> .input
 			> textarea
 				min-height 200px
+
+	&.pre
+		> .input
+			> textarea
+				white-space pre
 
 .ui-textarea.fill
 	root(true)

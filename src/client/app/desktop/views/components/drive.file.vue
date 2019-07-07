@@ -11,19 +11,19 @@
 >
 	<div class="label" v-if="$store.state.i.avatarId == file.id">
 		<img src="/assets/label.svg"/>
-		<p>%i18n:@avatar%</p>
+		<p>{{ $t('avatar') }}</p>
 	</div>
 	<div class="label" v-if="$store.state.i.bannerId == file.id">
 		<img src="/assets/label.svg"/>
-		<p>%i18n:@banner%</p>
+		<p>{{ $t('banner') }}</p>
 	</div>
 	<div class="label red" v-if="file.isSensitive">
 		<img src="/assets/label-red.svg"/>
-		<p>%i18n:@nsfw%</p>
+		<p>{{ $t('nsfw') }}</p>
 	</div>
-	<div class="thumbnail" ref="thumbnail" :style="`background-color: ${ background }`">
-		<img :src="file.thumbnailUrl" alt="" @load="onThumbnailLoaded"/>
-	</div>
+
+	<x-file-thumbnail class="thumbnail" :file="file" fit="contain"/>
+
 	<p class="name">
 		<span>{{ file.name.lastIndexOf('.') != -1 ? file.name.substr(0, file.name.lastIndexOf('.')) : file.name }}</span>
 		<span class="ext" v-if="file.name.lastIndexOf('.') != -1">{{ file.name.substr(file.name.lastIndexOf('.')) }}</span>
@@ -33,12 +33,19 @@
 
 <script lang="ts">
 import Vue from 'vue';
-import * as anime from 'animejs';
-import contextmenu from '../../api/contextmenu';
+import i18n from '../../../i18n';
 import copyToClipboard from '../../../common/scripts/copy-to-clipboard';
+import updateAvatar from '../../api/update-avatar';
+import updateBanner from '../../api/update-banner';
+import { appendQuery } from '../../../../../prelude/url';
+import XFileThumbnail from '../../../common/views/components/drive-file-thumbnail.vue';
 
 export default Vue.extend({
+	i18n: i18n('desktop/views/components/drive.file.vue'),
 	props: ['file'],
+	components: {
+		XFileThumbnail
+	},
 	data() {
 		return {
 			isContextmenuShowing: false,
@@ -53,12 +60,7 @@ export default Vue.extend({
 			return this.browser.selectedFiles.some(f => f.id == this.file.id);
 		},
 		title(): string {
-			return `${this.file.name}\n${this.file.type} ${Vue.filter('bytes')(this.file.datasize)}`;
-		},
-		background(): string {
-			return this.file.properties.avgColor && this.file.properties.avgColor.length == 3
-				? `rgb(${this.file.properties.avgColor.join(',')})`
-				: 'transparent';
+			return `${this.file.name}\n${this.file.type} ${Vue.filter('bytes')(this.file.size)}`;
 		}
 	},
 	methods: {
@@ -68,56 +70,57 @@ export default Vue.extend({
 
 		onContextmenu(e) {
 			this.isContextmenuShowing = true;
-			contextmenu((this as any).os)(e, [{
+			this.$contextmenu(e, [{
 				type: 'item',
-				text: '%i18n:@contextmenu.rename%',
-				icon: '%fa:i-cursor%',
+				text: this.$t('contextmenu.rename'),
+				icon: 'i-cursor',
 				action: this.rename
 			}, {
 				type: 'item',
-				text: this.file.isSensitive ? '%i18n:@contextmenu.unmark-as-sensitive%' : '%i18n:@contextmenu.mark-as-sensitive%',
-				icon: this.file.isSensitive ? '%fa:R eye%' : '%fa:R eye-slash%',
+				text: this.file.isSensitive ? this.$t('contextmenu.unmark-as-sensitive') : this.$t('contextmenu.mark-as-sensitive'),
+				icon: this.file.isSensitive ? ['far', 'eye'] : ['far', 'eye-slash'],
 				action: this.toggleSensitive
 			}, null, {
 				type: 'item',
-				text: '%i18n:@contextmenu.copy-url%',
-				icon: '%fa:link%',
+				text: this.$t('contextmenu.copy-url'),
+				icon: 'link',
 				action: this.copyUrl
 			}, {
 				type: 'link',
-				href: `${this.file.url}?download`,
-				text: '%i18n:@contextmenu.download%',
-				icon: '%fa:download%',
+				href: appendQuery(this.file.url, 'download'),
+				text: this.$t('contextmenu.download'),
+				icon: 'download',
+				download: this.file.name
 			}, null, {
 				type: 'item',
-				text: '%i18n:common.delete%',
-				icon: '%fa:R trash-alt%',
+				text: this.$t('@.delete'),
+				icon: ['far', 'trash-alt'],
 				action: this.deleteFile
 			}, null, {
 				type: 'nest',
-				text: '%i18n:@contextmenu.else-files%',
+				text: this.$t('contextmenu.else-files'),
 				menu: [{
 					type: 'item',
-					text: '%i18n:@contextmenu.set-as-avatar%',
+					text: this.$t('contextmenu.set-as-avatar'),
 					action: this.setAsAvatar
 				}, {
 					type: 'item',
-					text: '%i18n:@contextmenu.set-as-banner%',
+					text: this.$t('contextmenu.set-as-banner'),
 					action: this.setAsBanner
 				}]
 			}, /*{
 				type: 'nest',
-				text: '%i18n:@contextmenu.open-in-app%',
+				text: this.$t('contextmenu.open-in-app'),
 				menu: [{
 					type: 'item',
 					text: '%i18n:@contextmenu.add-app%...',
 					action: this.addApp
 				}]
 			}*/], {
-					closed: () => {
-						this.isContextmenuShowing = false;
-					}
-				});
+				closed: () => {
+					this.isContextmenuShowing = false;
+				}
+			});
 		},
 
 		onDragstart(e) {
@@ -136,10 +139,10 @@ export default Vue.extend({
 		},
 
 		onThumbnailLoaded() {
-			if (this.file.properties.avgColor && this.file.properties.avgColor.length == 3) {
+			if (this.file.properties.avgColor) {
 				anime({
 					targets: this.$refs.thumbnail,
-					backgroundColor: `rgba(${this.file.properties.avgColor.join(',')}, 0)`,
+					backgroundColor: 'transparent', // TODO fade
 					duration: 100,
 					easing: 'linear'
 				});
@@ -147,13 +150,16 @@ export default Vue.extend({
 		},
 
 		rename() {
-			(this as any).apis.input({
-				title: '%i18n:@contextmenu.rename-file%',
-				placeholder: '%i18n:@contextmenu.input-new-file-name%',
-				default: this.file.name,
-				allowEmpty: false
-			}).then(name => {
-				(this as any).api('drive/files/update', {
+			this.$root.dialog({
+				title: this.$t('contextmenu.rename-file'),
+				input: {
+					placeholder: this.$t('contextmenu.input-new-file-name'),
+					default: this.file.name,
+					allowEmpty: false
+				}
+			}).then(({ canceled, result: name }) => {
+				if (canceled) return;
+				this.$root.api('drive/files/update', {
 					fileId: this.file.id,
 					name: name
 				});
@@ -161,7 +167,7 @@ export default Vue.extend({
 		},
 
 		toggleSensitive() {
-			(this as any).api('drive/files/update', {
+			this.$root.api('drive/files/update', {
 				fileId: this.file.id,
 				isSensitive: !this.file.isSensitive
 			});
@@ -169,21 +175,18 @@ export default Vue.extend({
 
 		copyUrl() {
 			copyToClipboard(this.file.url);
-			(this as any).apis.dialog({
-				title: '%fa:check%%i18n:@contextmenu.copied%',
-				text: '%i18n:@contextmenu.copied-url-to-clipboard%',
-				actions: [{
-					text: '%i18n:common.ok%'
-				}]
+			this.$root.dialog({
+				title: this.$t('contextmenu.copied'),
+				text: this.$t('contextmenu.copied-url-to-clipboard')
 			});
 		},
 
 		setAsAvatar() {
-			(this as any).apis.updateAvatar(this.file);
+			updateAvatar(this.$root)(this.file);
 		},
 
 		setAsBanner() {
-			(this as any).apis.updateBanner(this.file);
+			updateBanner(this.$root)(this.file);
 		},
 
 		addApp() {
@@ -191,7 +194,7 @@ export default Vue.extend({
 		},
 
 		deleteFile() {
-			(this as any).api('drive/files/delete', {
+			this.$root.api('drive/files/delete', {
 				fileId: this.file.id
 			});
 		}
@@ -202,7 +205,7 @@ export default Vue.extend({
 <style lang="stylus" scoped>
 .gvfdktuvdgwhmztnuekzkswkjygptfcv
 	padding 8px 0 0 0
-	height 180px
+	min-height 180px
 	border-radius 4px
 
 	&, *
@@ -249,6 +252,9 @@ export default Vue.extend({
 				display none
 
 		> .name
+			color var(--primaryForeground)
+
+		> .thumbnail
 			color var(--primaryForeground)
 
 	&[data-is-contextmenu-showing]
@@ -316,18 +322,7 @@ export default Vue.extend({
 		width 128px
 		height 128px
 		margin auto
-
-		> img
-			display block
-			position absolute
-			top 0
-			left 0
-			right 0
-			bottom 0
-			margin auto
-			max-width 128px
-			max-height 128px
-			pointer-events none
+		color var(--driveFileIcon)
 
 	> .name
 		display block

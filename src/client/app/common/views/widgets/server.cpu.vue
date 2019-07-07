@@ -2,8 +2,8 @@
 <div class="cpu">
 	<x-pie class="pie" :value="usage"/>
 	<div>
-		<p>%fa:microchip%CPU</p>
-		<p>{{ meta.cpu.cores }} Cores</p>
+		<p><fa icon="microchip"/>CPU</p>
+		<p>{{ meta.cpu.cores }} Logical cores</p>
 		<p>{{ meta.cpu.model }}</p>
 	</div>
 </div>
@@ -57,7 +57,7 @@ export default Vue.extend({
 			&:first-child
 				font-weight bold
 
-				> [data-fa]
+				> [data-icon]
 					margin-right 4px
 
 	&:after

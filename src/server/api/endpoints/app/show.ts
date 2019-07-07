@@ -1,27 +1,45 @@
-import $ from 'cafy'; import ID from '../../../../misc/cafy-id';
-import App, { pack, IApp } from '../../../../models/app';
-import { ILocalUser } from '../../../../models/user';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
+import define from '../../define';
+import { ApiError } from '../../error';
+import { Apps } from '../../../../models';
 
-/**
- * Show an app
- */
-export default (params: any, user: ILocalUser, app: IApp) => new Promise(async (res, rej) => {
+export const meta = {
+	tags: ['app'],
+
+	params: {
+		appId: {
+			validator: $.type(ID),
+		},
+	},
+
+	res: {
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		ref: 'App',
+	},
+
+	errors: {
+		noSuchApp: {
+			message: 'No such app.',
+			code: 'NO_SUCH_APP',
+			id: 'dce83913-2dc6-4093-8a7b-71dbb11718a3'
+		}
+	}
+};
+
+export default define(meta, async (ps, user, app) => {
 	const isSecure = user != null && app == null;
 
-	// Get 'appId' parameter
-	const [appId, appIdErr] = $.type(ID).get(params.appId);
-	if (appIdErr) return rej('invalid appId param');
-
 	// Lookup app
-	const ap = await App.findOne({ _id: appId });
+	const ap = await Apps.findOne(ps.appId);
 
-	if (ap === null) {
-		return rej('app not found');
+	if (ap == null) {
+		throw new ApiError(meta.errors.noSuchApp);
 	}
 
-	// Send response
-	res(await pack(ap, user, {
+	return await Apps.pack(ap, user, {
 		detail: true,
-		includeSecret: isSecure && ap.userId.equals(user._id)
-	}));
+		includeSecret: isSecure && (ap.userId === user.id)
+	});
 });

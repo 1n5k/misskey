@@ -1,26 +1,31 @@
 import rndstr from 'rndstr';
-import RegistrationTicket from '../../../../models/registration-tickets';
+import define from '../../define';
+import { RegistrationTickets } from '../../../../models';
+import { genId } from '../../../../misc/gen-id';
 
 export const meta = {
 	desc: {
 		'ja-JP': '招待コードを発行します。'
 	},
 
+	tags: ['admin'],
+
 	requireCredential: true,
-	requireAdmin: true,
+	requireModerator: true,
 
 	params: {}
 };
 
-export default (params: any) => new Promise(async (res, rej) => {
+export default define(meta, async (ps) => {
 	const code = rndstr({ length: 5, chars: '0-9' });
 
-	await RegistrationTicket.insert({
+	await RegistrationTickets.save({
+		id: genId(),
 		createdAt: new Date(),
 		code: code
 	});
 
-	res({
+	return {
 		code: code
-	});
+	};
 });

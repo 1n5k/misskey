@@ -1,8 +1,8 @@
-import parse from '../../../../mfm/parse';
-import { sum } from '../../../../prelude/array';
+import { parse } from '../../../../mfm/parse';
+import { sum, unique } from '../../../../prelude/array';
+import shouldMuteNote from './should-mute-note';
 import MkNoteMenu from '../views/components/note-menu.vue';
 import MkReactionPicker from '../views/components/reaction-picker.vue';
-import Ok from '../views/components/ok.vue';
 
 function focus(el, fn) {
 	const target = fn(el);
@@ -22,7 +22,8 @@ type Opts = {
 export default (opts: Opts = {}) => ({
 	data() {
 		return {
-			showContent: false
+			showContent: false,
+			hideThisNote: false
 		};
 	},
 
@@ -64,31 +65,50 @@ export default (opts: Opts = {}) => ({
 			return this.isRenote ? this.note.renote : this.note;
 		},
 
+		isMyNote(): boolean {
+			return this.$store.getters.isSignedIn && (this.$store.state.i.id === this.appearNote.userId);
+		},
+
 		reactionsCount(): number {
-			return this.appearNote.reactionCounts
-				? sum(Object.values(this.appearNote.reactionCounts))
+			return this.appearNote.reactions
+				? sum(Object.values(this.appearNote.reactions))
 				: 0;
 		},
 
 		title(): string {
-			return new Date(this.appearNote.createdAt).toLocaleString();
+			return '';
 		},
 
 		urls(): string[] {
 			if (this.appearNote.text) {
 				const ast = parse(this.appearNote.text);
-				return ast
-					.filter(t => (t.type == 'url' || t.type == 'link') && !t.silent)
-					.map(t => t.url);
+				// TODO: 再帰的にURL要素がないか調べる
+				const urls = unique(ast
+					.filter(t => ((t.node.type == 'url' || t.node.type == 'link') && t.node.props.url && !t.node.props.silent))
+					.map(t => t.node.props.url));
+
+				// unique without hash
+				// [ http://a/#1, http://a/#2, http://b/#3 ] => [ http://a/#1, http://b/#3 ]
+				const removeHash = x => x.replace(/#[^#]*$/, '');
+
+				return urls.reduce((array, url) => {
+					const removed = removeHash(url);
+					if (!array.map(x => removeHash(x)).includes(removed)) array.push(url);
+					return array;
+				}, []);
 			} else {
 				return null;
 			}
 		}
 	},
 
+	created() {
+		this.hideThisNote = shouldMuteNote(this.$store.state.i, this.$store.state.settings, this.appearNote);
+	},
+
 	methods: {
 		reply(viaKeyboard = false) {
-			(this as any).apis.post({
+			this.$root.$post({
 				reply: this.appearNote,
 				animation: !viaKeyboard,
 				cb: () => {
@@ -98,7 +118,7 @@ export default (opts: Opts = {}) => ({
 		},
 
 		renote(viaKeyboard = false) {
-			(this as any).apis.post({
+			this.$root.$post({
 				renote: this.appearNote,
 				animation: !viaKeyboard,
 				cb: () => {
@@ -115,43 +135,51 @@ export default (opts: Opts = {}) => ({
 
 		react(viaKeyboard = false) {
 			this.blur();
-			(this as any).os.new(MkReactionPicker, {
+			this.$root.new(MkReactionPicker, {
 				source: this.$refs.reactButton,
 				note: this.appearNote,
 				showFocus: viaKeyboard,
-				animation: !viaKeyboard,
-				compact: opts.mobile,
-				big: opts.mobile
+				animation: !viaKeyboard
 			}).$once('closed', this.focus);
 		},
 
 		reactDirectly(reaction) {
-			(this as any).api('notes/reactions/create', {
+			this.$root.api('notes/reactions/create', {
 				noteId: this.appearNote.id,
 				reaction: reaction
 			});
 		},
 
+		undoReact(note) {
+			const oldReaction = note.myReaction;
+			if (!oldReaction) return;
+			this.$root.api('notes/reactions/delete', {
+				noteId: note.id
+			});
+		},
+
 		favorite() {
-			(this as any).api('notes/favorites/create', {
+			this.$root.api('notes/favorites/create', {
 				noteId: this.appearNote.id
 			}).then(() => {
-				(this as any).os.new(Ok);
+				this.$root.dialog({
+					type: 'success',
+					splash: true
+				});
 			});
 		},
 
 		del() {
-			(this as any).api('notes/delete', {
+			this.$root.api('notes/delete', {
 				noteId: this.appearNote.id
 			});
 		},
 
 		menu(viaKeyboard = false) {
-			(this as any).os.new(MkNoteMenu, {
+			this.$root.new(MkNoteMenu, {
 				source: this.$refs.menuButton,
 				note: this.appearNote,
-				animation: !viaKeyboard,
-				compact: opts.mobile,
+				animation: !viaKeyboard
 			}).$once('closed', this.focus);
 		},
 

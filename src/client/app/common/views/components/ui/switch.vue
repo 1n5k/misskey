@@ -77,11 +77,11 @@ export default Vue.extend({
 
 	&.checked
 		> .button
-			background-color var(--primaryAlpha04)
-			border-color var(--primaryAlpha04)
+			background-color var(--switchActiveTrack)
+			border-color var(--switchActiveTrack)
 
 			> *
-				background-color var(--primary)
+				background-color var(--switchActive)
 				transform translateX(14px)
 
 	> input
@@ -119,15 +119,16 @@ export default Vue.extend({
 		font-size 16px
 		cursor pointer
 		transition inherit
+		color var(--text)
 
 		> span
 			display block
 			line-height 20px
-			color currentColor
 			transition inherit
 
 		> p
 			margin 0
 			opacity 0.7
+			font-size 90%
 
 </style>

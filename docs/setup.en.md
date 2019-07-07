@@ -10,7 +10,7 @@ This guide describes how to install and setup Misskey.
 
 *1.* Create Misskey user
 ----------------------------------------------------------------
-Running misskey on root is not a good idea so we create a user for that.
+Running misskey as root is not a good idea so we create a user for that.
 In debian for exemple :
 
 ```
@@ -22,116 +22,119 @@ adduser --disabled-password --disabled-login misskey
 Please install and setup these softwares:
 
 #### Dependencies :package:
-* **[Node.js](https://nodejs.org/en/)**
-* **[MongoDB](https://www.mongodb.com/)** >= 3.6
+* **[Node.js](https://nodejs.org/en/)** >= 11.7.0
+* **[PostgreSQL](https://www.postgresql.org/)** >= 10
+* **[Redis](https://redis.io/)**
 
 ##### Optional
-* [Redis](https://redis.io/)
-  * Redis is optional, but we strongly recommended to install it
 * [Elasticsearch](https://www.elastic.co/) - required to enable the search feature
+* [FFmpeg](https://www.ffmpeg.org/)
 
-*3.* Setup MongoDB
+*3.* Install Misskey
 ----------------------------------------------------------------
-In root :
-1. `mongo` Go to the mongo shell
-2. `use misskey` Use the misskey database
-3. `db.users.save( {dummy:"dummy"} )` Write dummy data to initialize the db.
-4. `db.createUser( { user: "misskey", pwd: "<password>", roles: [ { role: "readWrite", db: "misskey" } ] } )` Create the misskey user.
-5. `exit` You're done !
+1. Connect to misskey user.
 
-*4.* Install Misskey
+	`su - misskey`
+
+2. Clone the misskey repo from master branch.
+
+	`git clone -b master git://github.com/syuilo/misskey.git`
+
+3. Navigate to misskey directory
+
+	`cd misskey`
+
+4. Checkout to the [latest release](https://github.com/syuilo/misskey/releases/latest)
+
+	`git checkout master`
+
+5. Install misskey dependencies.
+
+	`npm install`
+
+*4.* Configure Misskey
 ----------------------------------------------------------------
-1. `su - misskey` Connect to misskey user.
-2. `git clone -b master git://github.com/syuilo/misskey.git` Clone the misskey repo from master branch.
-3. `cd misskey` Navigate to misskey directory
-4. `git checkout $(git tag -l | grep -v 'rc[0-9]*$' | sort -V | tail -n 1)` Checkout to the [latest release](https://github.com/syuilo/misskey/releases/latest)
-5. `npm install` Install misskey dependencies.
+1. Copy the `.config/example.yml` and rename it to `default.yml`.
 
-*(optional)* reCAPTCHA tokens
-----------------------------------------------------------------
-If you want to enable reCAPTCHA, you need to generate reCAPTCHA tokens:
-Please visit https://www.google.com/recaptcha/intro/ and generate keys.
+	`cp .config/example.yml .config/default.yml`
 
-*(optional)* Generating VAPID keys
-----------------------------------------------------------------
-If you want to enable ServiceWorker, you need to generate VAPID keys:
-Unless you have set your global node_modules location elsewhere, you need to run this in root.
-
-``` shell
-npm install web-push -g
-web-push generate-vapid-keys
-```
-
-*(optional)* Create a twitter application
-----------------------------------------------------------------
-If you want to enable the twitter integration, you need to create a twitter app at [https://developer.twitter.com/en/apply/user](https://developer.twitter.com/en/apply/user).
-
-In the app you need to set the oauth callback url as : https://misskey-instance/api/tw/cb
-
-
-*5.* Make configuration file
-----------------------------------------------------------------
-1. `cp .config/example.yml .config/default.yml` Copy the `.config/example.yml` and rename it to `default.yml`.
 2. Edit `default.yml`
 
-*6.* Build Misskey
+*5.* Build Misskey
 ----------------------------------------------------------------
 
 Build misskey with the following:
 
-`npm run build`
+`NODE_ENV=production npm run build`
 
-If you're on Debian, you will need to install the `build-essential` package.
+If you're on Debian, you will need to install the `build-essential`, `python` package.
 
 If you're still encountering errors about some modules, use node-gyp:
 
 1. `npm install -g node-gyp`
 2. `node-gyp configure`
 3. `node-gyp build`
-4. `npm run build`
+4. `NODE_ENV=production npm run build`
+
+*6.* Init DB
+----------------------------------------------------------------
+``` shell
+npm run init
+```
 
 *7.* That is it.
 ----------------------------------------------------------------
 Well done! Now, you have an environment that run to Misskey.
 
 ### Launch normally
-Just `npm start`. GLHF!
+Just `NODE_ENV=production npm start`. GLHF!
 
 ### Launch with systemd
 
-1. Create a systemd service here: `/etc/systemd/system/misskey.service`
+1. Create a systemd service here
+
+	`/etc/systemd/system/misskey.service`
+
 2. Edit it, and paste this and save:
 
-```
-[Unit]
-Description=Misskey daemon
+	```
+	[Unit]
+	Description=Misskey daemon
 
-[Service]
-Type=simple
-User=misskey
-ExecStart=/usr/bin/npm start
-WorkingDirectory=/home/misskey/misskey
-TimeoutSec=60
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier=misskey
-Restart=always
+	[Service]
+	Type=simple
+	User=misskey
+	ExecStart=/usr/bin/npm start
+	WorkingDirectory=/home/misskey/misskey
+	Environment="NODE_ENV=production"
+	TimeoutSec=60
+	StandardOutput=syslog
+	StandardError=syslog
+	SyslogIdentifier=misskey
+	Restart=always
 
-[Install]
-WantedBy=multi-user.target
-```
+	[Install]
+	WantedBy=multi-user.target
+	```
 
-3. `systemctl daemon-reload ; systemctl enable misskey` Reload systemd and enable the misskey service.
-4. `systemctl start misskey` Start the misskey service.
+3. Reload systemd and enable the misskey service.
+
+	`systemctl daemon-reload ; systemctl enable misskey`
+
+4. Start the misskey service.
+
+	`systemctl start misskey`
 
 You can check if the service is running with `systemctl status misskey`.
 
-### Way to Update to latest version of your Misskey
-1. `git fetch`
-2. `git checkout $(git tag -l | grep -v 'rc[0-9]*$' | sort -V | tail -n 1)`
+### How to update your Misskey server to the latest version
+1. `git checkout master`
+2. `git pull`
 3. `npm install`
-4. `npm run build`
+4. `NODE_ENV=production npm run build`
 5. Check [ChangeLog](../CHANGELOG.md) for migration information
+6. Restart your Misskey process to apply changes
+7. Enjoy
 
 ----------------------------------------------------------------
 

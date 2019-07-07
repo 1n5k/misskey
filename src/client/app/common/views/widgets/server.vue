@@ -1,10 +1,10 @@
 <template>
 <div class="mkw-server">
-	<mk-widget-container :show-header="props.design == 0" :naked="props.design == 2">
-		<template slot="header">%fa:server%%i18n:@title%</template>
-		<button slot="func" @click="toggle" title="%i18n:@toggle%">%fa:sort%</button>
+	<ui-container :show-header="props.design == 0" :naked="props.design == 2">
+		<template #header><fa icon="server"/>{{ $t('title') }}</template>
+		<template #func><button @click="toggle" :title="$t('toggle')"><fa icon="sort"/></button></template>
 
-		<p :class="$style.fetching" v-if="fetching">%fa:spinner .pulse .fw%%i18n:common.loading%<mk-ellipsis/></p>
+		<p :class="$style.fetching" v-if="fetching"><fa icon="spinner" pulse fixed-width/>{{ $t('@.loading') }}<mk-ellipsis/></p>
 		<template v-if="!fetching">
 			<x-cpu-memory v-show="props.view == 0" :connection="connection"/>
 			<x-cpu v-show="props.view == 1" :connection="connection" :meta="meta"/>
@@ -13,12 +13,13 @@
 			<x-uptimes v-show="props.view == 4" :connection="connection"/>
 			<x-info v-show="props.view == 5" :connection="connection" :meta="meta"/>
 		</template>
-	</mk-widget-container>
+	</ui-container>
 </div>
 </template>
 
 <script lang="ts">
 import define from '../../../common/define-widget';
+import i18n from '../../../i18n';
 import XCpuMemory from './server.cpu-memory.vue';
 import XCpu from './server.cpu.vue';
 import XMemory from './server.memory.vue';
@@ -33,6 +34,8 @@ export default define({
 		view: 0
 	})
 }).extend({
+	i18n: i18n('common/views/widgets/server.vue'),
+
 	components: {
 		XCpuMemory,
 		XCpu,
@@ -49,12 +52,12 @@ export default define({
 		};
 	},
 	mounted() {
-		(this as any).os.getMeta().then(meta => {
+		this.$root.getMeta().then(meta => {
 			this.meta = meta;
 			this.fetching = false;
 		});
 
-		this.connection = (this as any).os.stream.useSharedConnection('serverStats');
+		this.connection = this.$root.stream.useSharedConnection('serverStats');
 	},
 	beforeDestroy() {
 		this.connection.dispose();
@@ -85,9 +88,9 @@ export default define({
 	margin 0
 	padding 16px
 	text-align center
-	color #aaa
+	color var(--text)
 
-	> [data-fa]
+	> [data-icon]
 		margin-right 4px
 
 </style>

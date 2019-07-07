@@ -1,40 +1,41 @@
 <template>
 <mk-ui>
-	<span slot="header"><span style="margin-right:4px;">%fa:home%</span>%i18n:@dashboard%</span>
-	<template slot="func">
-		<button @click="customizing = !customizing">%fa:cog%</button>
+	<template #header><span style="margin-right:4px;"><fa icon="home"/></span>{{ $t('dashboard') }}</template>
+	<template #func>
+		<button @click="customizing = !customizing"><fa icon="cog"/></button>
 	</template>
 	<main>
 		<template v-if="customizing">
 			<header>
 				<select v-model="widgetAdderSelected">
-					<option value="profile">%i18n:common.widgets.profile%</option>
-					<option value="analog-clock">%i18n:common.widgets.analog-clock%</option>
-					<option value="calendar">%i18n:common.widgets.calendar%</option>
-					<option value="activity">%i18n:common.widgets.activity%</option>
-					<option value="rss">%i18n:common.widgets.rss%</option>
-					<option value="photo-stream">%i18n:common.widgets.photo-stream%</option>
-					<option value="slideshow">%i18n:common.widgets.slideshow%</option>
-					<option value="hashtags">%i18n:common.widgets.hashtags%</option>
-					<option value="posts-monitor">%i18n:common.widgets.posts-monitor%</option>
-					<option value="version">%i18n:common.widgets.version%</option>
-					<option value="server">%i18n:common.widgets.server%</option>
-					<option value="memo">%i18n:common.widgets.memo%</option>
-					<option value="donation">%i18n:common.widgets.donation%</option>
-					<option value="nav">%i18n:common.widgets.nav%</option>
-					<option value="tips">%i18n:common.widgets.tips%</option>
+					<option value="profile">{{ $t('@.widgets.profile') }}</option>
+					<option value="analog-clock">{{ $t('@.widgets.analog-clock') }}</option>
+					<option value="calendar">{{ $t('@.widgets.calendar') }}</option>
+					<option value="activity">{{ $t('@.widgets.activity') }}</option>
+					<option value="rss">{{ $t('@.widgets.rss') }}</option>
+					<option value="photo-stream">{{ $t('@.widgets.photo-stream') }}</option>
+					<option value="slideshow">{{ $t('@.widgets.slideshow') }}</option>
+					<option value="hashtags">{{ $t('@.widgets.hashtags') }}</option>
+					<option value="posts-monitor">{{ $t('@.widgets.posts-monitor') }}</option>
+					<option value="version">{{ $t('@.widgets.version') }}</option>
+					<option value="server">{{ $t('@.widgets.server') }}</option>
+					<option value="queue">{{ $t('@.widgets.queue') }}</option>
+					<option value="memo">{{ $t('@.widgets.memo') }}</option>
+					<option value="nav">{{ $t('@.widgets.nav') }}</option>
+					<option value="tips">{{ $t('@.widgets.tips') }}</option>
 				</select>
-				<button @click="addWidget">%i18n:add-widget%</button>
-				<p><a @click="hint">%i18n:customization-tips%</a></p>
+				<button @click="addWidget">{{ $t('add-widget') }}</button>
+				<p><a @click="hint">{{ $t('customization-tips') }}</a></p>
 			</header>
 			<x-draggable
 				:list="widgets"
-				:options="{ handle: '.handle', animation: 150 }"
+				handle=".handle"
+				animation="150"
 				@sort="onWidgetSort"
 			>
 				<div v-for="widget in widgets" class="customize-container" :key="widget.id">
 					<header>
-						<span class="handle">%fa:bars%</span>{{ widget.name }}<button class="remove" @click="removeWidget(widget)">%fa:times%</button>
+						<span class="handle"><fa icon="bars"/></span>{{ widget.name }}<button class="remove" @click="removeWidget(widget)"><fa icon="times"/></button>
 					</header>
 					<div @click="widgetFunc(widget.id)">
 						<component :is="`mkw-${widget.name}`" :widget="widget" :ref="widget.id" :is-customize-mode="true" platform="mobile"/>
@@ -51,10 +52,12 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import * as XDraggable from 'vuedraggable';
 import * as uuid from 'uuid';
 
 export default Vue.extend({
+	i18n: i18n('mobile/views/pages/widgets.vue'),
 	components: {
 		XDraggable
 	},
@@ -69,13 +72,13 @@ export default Vue.extend({
 
 	computed: {
 		widgets(): any[] {
-			return this.$store.state.settings.mobileHome;
+			return this.$store.getters.mobileHome || [];
 		}
 	},
 
 	created() {
 		if (this.widgets.length == 0) {
-			this.widgets = [{
+			this.$store.commit('setMobileHome', [{
 				name: 'calendar',
 				id: 'a', data: {}
 			}, {
@@ -88,26 +91,31 @@ export default Vue.extend({
 				name: 'photo-stream',
 				id: 'd', data: {}
 			}, {
-				name: 'donation',
-				id: 'e', data: {}
-			}, {
 				name: 'nav',
 				id: 'f', data: {}
 			}, {
 				name: 'version',
 				id: 'g', data: {}
-			}];
-			this.saveHome();
+			}]);
 		}
+
+		this.$watch('$store.getters.mobileHome', () => {
+			this.$store.dispatch('settings/updateMobileHomeProfile');
+		}, {
+			deep: true
+		});
 	},
 
 	mounted() {
-		document.title = (this as any).os.instanceName;
+		document.title = this.$root.instanceName;
 	},
 
 	methods: {
 		hint() {
-			alert('%i18n:@widgets-hints%');
+			this.$root.dialog({
+				type: 'info',
+				text: this.$t('widgets-hints')
+			});
 		},
 
 		widgetFunc(id) {
@@ -120,7 +128,7 @@ export default Vue.extend({
 		},
 
 		addWidget() {
-			this.$store.dispatch('settings/addMobileHomeWidget', {
+			this.$store.commit('addMobileHomeWidget', {
 				name: this.widgetAdderSelected,
 				id: uuid(),
 				data: {}
@@ -128,14 +136,11 @@ export default Vue.extend({
 		},
 
 		removeWidget(widget) {
-			this.$store.dispatch('settings/removeMobileHomeWidget', widget);
+			this.$store.commit('removeMobileHomeWidget', widget);
 		},
 
 		saveHome() {
-			this.$store.commit('settings/setMobileHome', this.widgets);
-			(this as any).api('i/update_mobile_home', {
-				home: this.widgets
-			});
+			this.$store.commit('setMobileHome', this.widgets);
 		}
 	}
 });

@@ -1,22 +1,29 @@
 <template>
 <mk-ui>
-	<span slot="header">
-		<template v-if="user"><span style="margin-right:4px;">%fa:R comments%</span>{{ user | userName }}</template>
+	<template #header>
+		<template v-if="user"><span style="margin-right:4px;"><fa :icon="['far', 'comments']"/></span><mk-user-name :user="user"/></template>
+		<template v-else-if="group"><span style="margin-right:4px;"><fa :icon="['far', 'comments']"/></span>{{ group.name }}</template>
 		<template v-else><mk-ellipsis/></template>
-	</span>
-	<mk-messaging-room v-if="!fetching" :user="user" :is-naked="true"/>
+	</template>
+	<x-messaging-room v-if="!fetching" :user="user" :group="group" :is-naked="true"/>
 </mk-ui>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import parseAcct from '../../../../../misc/acct/parse';
 
 export default Vue.extend({
+	i18n: i18n(),
+	components: {
+		XMessagingRoom: () => import('../../../common/views/components/messaging-room.vue').then(m => m.default)
+	},
 	data() {
 		return {
 			fetching: true,
 			user: null,
+			group: null,
 			unwatchDarkmode: null
 		};
 	},
@@ -43,12 +50,21 @@ export default Vue.extend({
 	methods: {
 		fetch() {
 			this.fetching = true;
-			(this as any).api('users/show', parseAcct(this.$route.params.user)).then(user => {
-				this.user = user;
-				this.fetching = false;
+			if (this.$route.params.user) {
+				this.$root.api('users/show', parseAcct(this.$route.params.user)).then(user => {
+					this.user = user;
+					this.fetching = false;
 
-				document.title = `%i18n:@messaging%: ${Vue.filter('userName')(this.user)} | ${(this as any).os.instanceName}`;
-			});
+					document.title = `${this.$t('@.messaging')}: ${Vue.filter('userName')(this.user)} | ${this.$root.instanceName}`;
+				});
+			} else {
+				this.$root.api('users/groups/show', { groupId: this.$route.params.group }).then(group => {
+					this.group = group;
+					this.fetching = false;
+
+					document.title = this.$t('@.messaging') + ': ' + this.group.name;
+				});
+			}
 		}
 	}
 });

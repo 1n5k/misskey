@@ -1,65 +1,126 @@
 import $ from 'cafy';
-import * as mongo from 'mongodb';
-import Note from '../../../../models/note';
-import { ILocalUser } from '../../../../models/user';
-import { packMany } from '../../../../models/note';
 import es from '../../../../db/elasticsearch';
+import define from '../../define';
+import { ApiError } from '../../error';
+import { Notes } from '../../../../models';
+import { In } from 'typeorm';
+import { ID } from '../../../../misc/cafy-id';
 
-export default (params: any, me: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'query' parameter
-	const [query, queryError] = $.str.get(params.query);
-	if (queryError) return rej('invalid query param');
+export const meta = {
+	desc: {
+		'ja-JP': '投稿を検索します。',
+		'en-US': 'Search notes.'
+	},
 
-	// Get 'offset' parameter
-	const [offset = 0, offsetErr] = $.num.optional.min(0).get(params.offset);
-	if (offsetErr) return rej('invalid offset param');
+	tags: ['notes'],
 
-	// Get 'limit' parameter
-	const [limit = 10, limitErr] = $.num.optional.range(1, 30).get(params.limit);
-	if (limitErr) return rej('invalid limit param');
+	requireCredential: false,
 
-	if (es == null) return rej('searching not available');
+	params: {
+		query: {
+			validator: $.str
+		},
 
-	es.search({
-		index: 'misskey',
-		type: 'note',
+		limit: {
+			validator: $.optional.num.range(1, 100),
+			default: 10
+		},
+
+		offset: {
+			validator: $.optional.num.min(0),
+			default: 0
+		},
+
+		host: {
+			validator: $.optional.nullable.str,
+			default: undefined
+		},
+
+		userId: {
+			validator: $.optional.nullable.type(ID),
+			default: null
+		},
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'Note',
+		}
+	},
+
+	errors: {
+		searchingNotAvailable: {
+			message: 'Searching not available.',
+			code: 'SEARCHING_NOT_AVAILABLE',
+			id: '7ee9c119-16a1-479f-a6fd-6fab00ed946f'
+		}
+	}
+};
+
+export default define(meta, async (ps, me) => {
+	if (es == null) throw new ApiError(meta.errors.searchingNotAvailable);
+
+	const userQuery = ps.userId != null ? [{
+		term: {
+			userId: ps.userId
+		}
+	}] : [];
+
+	const hostQuery = ps.userId == null ?
+		ps.host === null ? [{
+			bool: {
+				must_not: {
+					exists: {
+						field: 'userHost'
+					}
+				}
+			}
+		}] : ps.host !== undefined ? [{
+			term: {
+				userHost: ps.host
+			}
+		}] : []
+	: [];
+
+	const result = await es.search({
+		index: 'misskey_note',
 		body: {
-			size: limit,
-			from: offset,
+			size: ps.limit!,
+			from: ps.offset,
 			query: {
-				simple_query_string: {
-					fields: ['text'],
-					query: query,
-					default_operator: 'and'
+				bool: {
+					must: [{
+						simple_query_string: {
+							fields: ['text'],
+							query: ps.query.toLowerCase(),
+							default_operator: 'and'
+						},
+					}, ...hostQuery, ...userQuery]
 				}
 			},
-			sort: [
-				{ _doc: 'desc' }
-			]
+			sort: [{
+				_doc: 'desc'
+			}]
 		}
-	}, async (error, response) => {
-		if (error) {
-			console.error(error);
-			return res(500);
-		}
-
-		if (response.hits.total === 0) {
-			return res([]);
-		}
-
-		const hits = response.hits.hits.map(hit => new mongo.ObjectID(hit._id));
-
-		// Fetch found notes
-		const notes = await Note.find({
-			_id: {
-				$in: hits
-			}
-		}, {
-				sort: {
-					_id: -1
-				}
-			});
-
-		res(await packMany(notes, me));
 	});
+
+	const hits = result.body.hits.hits.map((hit: any) => hit._id);
+
+	if (hits.length === 0) return [];
+
+	// Fetch found notes
+	const notes = await Notes.find({
+		where: {
+			id: In(hits)
+		},
+		order: {
+			id: -1
+		}
+	});
+
+	return await Notes.packMany(notes, me);
 });

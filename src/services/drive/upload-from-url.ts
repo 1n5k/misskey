@@ -1,65 +1,46 @@
-import * as fs from 'fs';
-import * as URL from 'url';
-
-import * as debug from 'debug';
-import * as tmp from 'tmp';
-import * as request from 'request';
-
-import { IDriveFile, validateFileName } from '../../models/drive-file';
 import create from './add-file';
-import config from '../../config';
-import { IUser } from '../../models/user';
-import * as mongodb from 'mongodb';
+import { User } from '../../models/entities/user';
+import { driveLogger } from './logger';
+import { createTemp } from '../../misc/create-temp';
+import { downloadUrl } from '../../misc/donwload-url';
+import { DriveFolder } from '../../models/entities/drive-folder';
+import { DriveFile } from '../../models/entities/drive-file';
+import { DriveFiles } from '../../models';
 
-const log = debug('misskey:drive:upload-from-url');
+const logger = driveLogger.createSubLogger('downloader');
 
-export default async (url: string, user: IUser, folderId: mongodb.ObjectID = null, uri: string = null, sensitive = false): Promise<IDriveFile> => {
-	log(`REQUESTED: ${url}`);
-
-	let name = URL.parse(url).pathname.split('/').pop();
-	if (!validateFileName(name)) {
+export default async (
+	url: string,
+	user: User,
+	folderId: DriveFolder['id'] | null = null,
+	uri: string | null = null,
+	sensitive = false,
+	force = false,
+	link = false
+): Promise<DriveFile> => {
+	let name = new URL(url).pathname.split('/').pop() || null;
+	if (name == null || !DriveFiles.validateFileName(name)) {
 		name = null;
 	}
 
-	log(`name: ${name}`);
-
 	// Create temp file
-	const [path, cleanup] = await new Promise<[string, any]>((res, rej) => {
-		tmp.file((e, path, fd, cleanup) => {
-			if (e) return rej(e);
-			res([path, cleanup]);
-		});
-	});
+	const [path, cleanup] = await createTemp();
 
 	// write content at URL to temp file
-	await new Promise((res, rej) => {
-		const writable = fs.createWriteStream(path);
-		const requestUrl = URL.parse(url).pathname.match(/[^\u0021-\u00ff]/) ? encodeURI(url) : url;
-		request({
-			url: requestUrl,
-			proxy: config.proxy,
-			headers: {
-				'User-Agent': config.user_agent
-			}
-		})
-			.on('error', rej)
-			.on('end', () => {
-				writable.close();
-				res();
-			})
-			.pipe(writable)
-			.on('error', rej);
-	});
+	await downloadUrl(url, path);
 
-	let driveFile: IDriveFile;
+	let driveFile: DriveFile;
 	let error;
 
 	try {
-		driveFile = await create(user, path, name, null, folderId, false, config.preventCacheRemoteFiles, url, uri, sensitive);
-		log(`got: ${driveFile._id}`);
+		driveFile = await create(user, path, name, null, folderId, force, link, url, uri, sensitive);
+		logger.succ(`Got: ${driveFile.id}`);
 	} catch (e) {
 		error = e;
-		log(`failed: ${e}`);
+		logger.error(`Failed to create drive file: ${e}`, {
+			url: url,
+			e: e
+		});
 	}
 
 	// clean-up
@@ -68,6 +49,6 @@ export default async (url: string, user: IUser, folderId: mongodb.ObjectID = nul
 	if (error) {
 		throw error;
 	} else {
-		return driveFile;
+		return driveFile!;
 	}
 };

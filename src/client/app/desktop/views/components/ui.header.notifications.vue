@@ -1,7 +1,8 @@
 <template>
 <div class="notifications" v-hotkey.global="keymap">
-	<button :data-active="isOpen" @click="toggle" title="%i18n:@title%">
-		%fa:R bell%<template v-if="hasUnreadNotification">%fa:circle%</template>
+	<button :data-active="isOpen" @click="toggle" :title="$t('title')">
+		<i class="bell"><fa :icon="['far', 'bell']"/></i>
+		<i class="circle" v-if="hasUnreadNotification"><fa icon="circle"/></i>
 	</button>
 	<div class="pop" v-if="isOpen">
 		<mk-notifications/>
@@ -11,9 +12,11 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import contains from '../../../common/scripts/contains';
 
 export default Vue.extend({
+	i18n: i18n('desktop/views/components/ui.header.notifications.vue'),
 	data() {
 		return {
 			isOpen: false
@@ -39,16 +42,16 @@ export default Vue.extend({
 
 		open() {
 			this.isOpen = true;
-			Array.from(document.querySelectorAll('body *')).forEach(el => {
+			for (const el of Array.from(document.querySelectorAll('body *'))) {
 				el.addEventListener('mousedown', this.onMousedown);
-			});
+			}
 		},
 
 		close() {
 			this.isOpen = false;
-			Array.from(document.querySelectorAll('body *')).forEach(el => {
+			for (const el of Array.from(document.querySelectorAll('body *'))) {
 				el.removeEventListener('mousedown', this.onMousedown);
-			});
+			}
 		},
 
 		onMousedown(e) {
@@ -79,15 +82,16 @@ export default Vue.extend({
 		&[data-active='true']
 			color var(--desktopHeaderHoverFg)
 
-		> [data-fa].bell
+		> i.bell
 			font-size 1.2em
 			line-height 48px
 
-		> [data-fa].circle
+		> i.circle
 			margin-left -5px
 			vertical-align super
 			font-size 10px
-			color var(--primary)
+			color var(--notificationIndicator)
+			animation blink 1s infinite
 
 	> .pop
 		$bgcolor = var(--face)

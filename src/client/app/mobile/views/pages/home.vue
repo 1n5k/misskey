@@ -1,25 +1,27 @@
 <template>
 <mk-ui>
-	<span slot="header" @click="showNav = true">
-		<span :class="$style.title">
-			<span v-if="src == 'home'">%fa:home%%i18n:@home%</span>
-			<span v-if="src == 'local'">%fa:R comments%%i18n:@local%</span>
-			<span v-if="src == 'hybrid'">%fa:share-alt%%i18n:@hybrid%</span>
-			<span v-if="src == 'global'">%fa:globe%%i18n:@global%</span>
-			<span v-if="src == 'mentions'">%fa:at%%i18n:@mentions%</span>
-			<span v-if="src == 'messages'">%fa:envelope R%%i18n:@messages%</span>
-			<span v-if="src == 'list'">%fa:list%{{ list.title }}</span>
-			<span v-if="src == 'tag'">%fa:hashtag%{{ tagTl.title }}</span>
+	<template #header>
+		<span @click="showNav = true">
+			<span :class="$style.title">
+				<span v-if="src == 'home'"><fa icon="home"/>{{ $t('home') }}</span>
+				<span v-if="src == 'local'"><fa :icon="['far', 'comments']"/>{{ $t('local') }}</span>
+				<span v-if="src == 'hybrid'"><fa icon="share-alt"/>{{ $t('hybrid') }}</span>
+				<span v-if="src == 'global'"><fa icon="globe"/>{{ $t('global') }}</span>
+				<span v-if="src == 'mentions'"><fa icon="at"/>{{ $t('mentions') }}</span>
+				<span v-if="src == 'messages'"><fa :icon="['far', 'envelope']"/>{{ $t('messages') }}</span>
+				<span v-if="src == 'list'"><fa icon="list"/>{{ list.name }}</span>
+				<span v-if="src == 'tag'"><fa icon="hashtag"/>{{ tagTl.title }}</span>
+			</span>
+			<span style="margin-left:8px">
+				<template v-if="!showNav"><fa icon="angle-down"/></template>
+				<template v-else><fa icon="angle-up"/></template>
+			</span>
+			<i :class="$style.badge" v-if="$store.state.i.hasUnreadMentions || $store.state.i.hasUnreadSpecifiedNotes"><fa icon="circle"/></i>
 		</span>
-		<span style="margin-left:8px">
-			<template v-if="!showNav">%fa:angle-down%</template>
-			<template v-else>%fa:angle-up%</template>
-		</span>
-		<i :class="$style.badge" v-if="$store.state.i.hasUnreadMentions || $store.state.i.hasUnreadSpecifiedNotes">%fa:circle%</i>
-	</span>
+	</template>
 
-	<template slot="func">
-		<button @click="fn">%fa:pencil-alt%</button>
+	<template #func>
+		<button @click="fn"><fa icon="pencil-alt"/></button>
 	</template>
 
 	<main>
@@ -28,19 +30,19 @@
 			<div class="pointer"></div>
 			<div class="body">
 				<div>
-					<span :data-active="src == 'home'" @click="src = 'home'">%fa:home% %i18n:@home%</span>
-					<span :data-active="src == 'local'" @click="src = 'local'" v-if="enableLocalTimeline">%fa:R comments% %i18n:@local%</span>
-					<span :data-active="src == 'hybrid'" @click="src = 'hybrid'" v-if="enableLocalTimeline">%fa:share-alt% %i18n:@hybrid%</span>
-					<span :data-active="src == 'global'" @click="src = 'global'">%fa:globe% %i18n:@global%</span>
+					<span :data-active="src == 'home'" @click="src = 'home'"><fa icon="home"/> {{ $t('home') }}</span>
+					<span :data-active="src == 'local'" @click="src = 'local'" v-if="enableLocalTimeline"><fa :icon="['far', 'comments']"/> {{ $t('local') }}</span>
+					<span :data-active="src == 'hybrid'" @click="src = 'hybrid'" v-if="enableLocalTimeline"><fa icon="share-alt"/> {{ $t('hybrid') }}</span>
+					<span :data-active="src == 'global'" @click="src = 'global'" v-if="enableGlobalTimeline"><fa icon="globe"/> {{ $t('global') }}</span>
 					<div class="hr"></div>
-					<span :data-active="src == 'mentions'" @click="src = 'mentions'">%fa:at% %i18n:@mentions%<i class="badge" v-if="$store.state.i.hasUnreadMentions">%fa:circle%</i></span>
-					<span :data-active="src == 'messages'" @click="src = 'messages'">%fa:envelope R% %i18n:@messages%<i class="badge" v-if="$store.state.i.hasUnreadSpecifiedNotes">%fa:circle%</i></span>
+					<span :data-active="src == 'mentions'" @click="src = 'mentions'"><fa icon="at"/> {{ $t('mentions') }}<i class="badge" v-if="$store.state.i.hasUnreadMentions"><fa icon="circle"/></i></span>
+					<span :data-active="src == 'messages'" @click="src = 'messages'"><fa :icon="['far', 'envelope']"/> {{ $t('messages') }}<i class="badge" v-if="$store.state.i.hasUnreadSpecifiedNotes"><fa icon="circle"/></i></span>
 					<template v-if="lists">
 						<div class="hr" v-if="lists.length > 0"></div>
-						<span v-for="l in lists" :data-active="src == 'list' && list == l" @click="src = 'list'; list = l" :key="l.id">%fa:list% {{ l.title }}</span>
+						<span v-for="l in lists" :data-active="src == 'list' && list == l" @click="src = 'list'; list = l" :key="l.id"><fa icon="list"/> {{ l.name }}</span>
 					</template>
 					<div class="hr" v-if="$store.state.settings.tagTimelines && $store.state.settings.tagTimelines.length > 0"></div>
-					<span v-for="tl in $store.state.settings.tagTimelines" :data-active="src == 'tag' && tagTl == tl" @click="src = 'tag'; tagTl = tl" :key="tl.id">%fa:hashtag% {{ tl.title }}</span>
+					<span v-for="tl in $store.state.settings.tagTimelines" :data-active="src == 'tag' && tagTl == tl" @click="src = 'tag'; tagTl = tl" :key="tl.id"><fa icon="hashtag"/> {{ tl.title }}</span>
 				</div>
 			</div>
 		</div>
@@ -61,10 +63,13 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import Progress from '../../../common/scripts/loading';
 import XTl from './home.timeline.vue';
 
 export default Vue.extend({
+	i18n: i18n('mobile/views/pages/home.vue'),
+
 	components: {
 		XTl
 	},
@@ -76,7 +81,8 @@ export default Vue.extend({
 			lists: null,
 			tagTl: null,
 			showNav: false,
-			enableLocalTimeline: false
+			enableLocalTimeline: false,
+			enableGlobalTimeline: false,
 		};
 	},
 
@@ -100,7 +106,7 @@ export default Vue.extend({
 
 		showNav(v) {
 			if (v && this.lists === null) {
-				(this as any).api('users/lists/list').then(lists => {
+				this.$root.api('users/lists/list').then(lists => {
 					this.lists = lists;
 				});
 			}
@@ -108,8 +114,13 @@ export default Vue.extend({
 	},
 
 	created() {
-		(this as any).os.getMeta().then(meta => {
-			this.enableLocalTimeline = !meta.disableLocalTimeline;
+		this.$root.getMeta().then((meta: Record<string, any>) => {
+			if (!(
+				this.enableGlobalTimeline = !meta.disableGlobalTimeline || this.$store.state.i.isModerator || this.$store.state.i.isAdmin
+			) && this.src === 'global') this.src = 'local';
+			if (!(
+				this.enableLocalTimeline = !meta.disableLocalTimeline || this.$store.state.i.isModerator || this.$store.state.i.isAdmin
+			) && ['local', 'hybrid'].includes(this.src)) this.src = 'home';
 		});
 
 		if (this.$store.state.device.tl) {
@@ -119,13 +130,11 @@ export default Vue.extend({
 			} else if (this.src == 'tag') {
 				this.tagTl = this.$store.state.device.tl.arg;
 			}
-		} else if (this.$store.state.i.followingCount == 0) {
-			this.src = 'hybrid';
 		}
 	},
 
 	mounted() {
-		document.title = (this as any).os.instanceName;
+		document.title = this.$root.instanceName;
 
 		Progress.start();
 
@@ -136,7 +145,7 @@ export default Vue.extend({
 
 	methods: {
 		fn() {
-			(this as any).apis.post();
+			this.$post();
 		},
 
 		saveSrc() {
@@ -222,30 +231,19 @@ main
 					> .badge
 						margin-left 6px
 						font-size 10px
-						color var(--primary)
-
-	> .tl
-		max-width 680px
-		margin 0 auto
-		padding 8px
-
-		@media (min-width 500px)
-			padding 16px
-
-		@media (min-width 600px)
-			padding 32px
+						color var(--notificationIndicator)
 
 </style>
 
 <style lang="stylus" module>
 .title
-	i
+	[data-icon]
 		margin-right 4px
 
 .badge
 	margin-left 6px
 	font-size 10px
-	color var(--primary)
+	color var(--notificationIndicator)
 	vertical-align middle
 
 </style>

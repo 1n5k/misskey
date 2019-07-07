@@ -1,20 +1,26 @@
 <template>
 <div class="mk-messaging-room-page">
-	<mk-messaging-room v-if="user" :user="user" :is-naked="true"/>
+	<x-messaging-room v-if="user || group" :user="user" :group="group" :is-naked="true"/>
 </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import Progress from '../../../common/scripts/loading';
 import parseAcct from '../../../../../misc/acct/parse';
 import getUserName from '../../../../../misc/get-user-name';
 
 export default Vue.extend({
+	i18n: i18n(),
+	components: {
+		XMessagingRoom: () => import('../../../common/views/components/messaging-room.vue').then(m => m.default)
+	},
 	data() {
 		return {
 			fetching: true,
-			user: null
+			user: null,
+			group: null
 		};
 	},
 	watch: {
@@ -42,14 +48,25 @@ export default Vue.extend({
 			Progress.start();
 			this.fetching = true;
 
-			(this as any).api('users/show', parseAcct(this.$route.params.user)).then(user => {
-				this.user = user;
-				this.fetching = false;
+			if (this.$route.params.user) {
+				this.$root.api('users/show', parseAcct(this.$route.params.user)).then(user => {
+					this.user = user;
+					this.fetching = false;
 
-				document.title = `メッセージ: ${getUserName(this.user)}`;
+					document.title = this.$t('@.messaging') + ': ' + getUserName(this.user);
 
-				Progress.done();
-			});
+					Progress.done();
+				});
+			} else {
+				this.$root.api('users/groups/show', { groupId: this.$route.params.group }).then(group => {
+					this.group = group;
+					this.fetching = false;
+
+					document.title = this.$t('@.messaging') + ': ' + this.group.name;
+
+					Progress.done();
+				});
+			}
 		}
 	}
 });

@@ -1,8 +1,10 @@
-import $ from 'cafy'; import ID from '../../../../../misc/cafy-id';
-import DriveFolder, { isValidFolderName, pack } from '../../../../../models/drive-folder';
-import { publishDriveStream } from '../../../../../stream';
-import { ILocalUser } from '../../../../../models/user';
-import getParams from '../../../get-params';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
+import { publishDriveStream } from '../../../../../services/stream';
+import define from '../../../define';
+import { ApiError } from '../../../error';
+import { DriveFolders } from '../../../../../models';
+import { genId } from '../../../../../misc/gen-id';
 
 export const meta = {
 	stability: 'stable',
@@ -12,61 +14,68 @@ export const meta = {
 		'en-US': 'Create a folder of drive.'
 	},
 
+	tags: ['drive'],
+
 	requireCredential: true,
 
-	kind: 'drive-write',
+	kind: 'write:drive',
 
 	params: {
-		name: $.str.optional.pipe(isValidFolderName).note({
+		name: {
+			validator: $.optional.str.pipe(DriveFolders.validateFolderName),
 			default: 'Untitled',
 			desc: {
 				'ja-JP': 'フォルダ名',
 				'en-US': 'Folder name'
 			}
-		}),
+		},
 
-		parentId: $.type(ID).optional.nullable.note({
+		parentId: {
+			validator: $.optional.nullable.type(ID),
 			desc: {
 				'ja-JP': '親フォルダID',
 				'en-US': 'Parent folder ID'
 			}
-		})
+		}
+	},
+
+	errors: {
+		noSuchFolder: {
+			message: 'No such folder.',
+			code: 'NO_SUCH_FOLDER',
+			id: '53326628-a00d-40a6-a3cd-8975105c0f95'
+		},
 	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) return rej(psErr);
-
+export default define(meta, async (ps, user) => {
 	// If the parent folder is specified
 	let parent = null;
 	if (ps.parentId) {
 		// Fetch parent folder
-		parent = await DriveFolder
-			.findOne({
-				_id: ps.parentId,
-				userId: user._id
-			});
+		parent = await DriveFolders.findOne({
+			id: ps.parentId,
+			userId: user.id
+		});
 
-		if (parent === null) {
-			return rej('parent-not-found');
+		if (parent == null) {
+			throw new ApiError(meta.errors.noSuchFolder);
 		}
 	}
 
 	// Create folder
-	const folder = await DriveFolder.insert({
+	const folder = await DriveFolders.save({
+		id: genId(),
 		createdAt: new Date(),
 		name: ps.name,
-		parentId: parent !== null ? parent._id : null,
-		userId: user._id
+		parentId: parent !== null ? parent.id : null,
+		userId: user.id
 	});
 
-	// Serialize
-	const folderObj = await pack(folder);
-
-	// Response
-	res(folderObj);
+	const folderObj = await DriveFolders.pack(folder);
 
 	// Publish folderCreated event
-	publishDriveStream(user._id, 'folderCreated', folderObj);
+	publishDriveStream(user.id, 'folderCreated', folderObj);
+
+	return folderObj;
 });

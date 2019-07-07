@@ -1,84 +1,87 @@
 <template>
 <div
 	class="note"
-	:class="{ mini }"
-	v-show="appearNote.deletedAt == null"
+	:class="{ mini: narrow }"
+	v-show="(this.$store.state.settings.remainDeletedNote || appearNote.deletedAt == null) && !hideThisNote"
 	:tabindex="appearNote.deletedAt == null ? '-1' : null"
 	v-hotkey="keymap"
 	:title="title"
 >
-	<div class="conversation" v-if="detail && conversation.length > 0">
-		<x-sub v-for="note in conversation" :key="note.id" :note="note" :mini="mini"/>
-	</div>
+	<x-sub v-for="note in conversation" :key="note.id" :note="note"/>
 	<div class="reply-to" v-if="appearNote.reply && (!$store.getters.isSignedIn || $store.state.settings.showReplyTarget)">
-		<x-sub :note="appearNote.reply" :mini="mini"/>
+		<x-sub :note="appearNote.reply"/>
 	</div>
-	<div class="renote" v-if="isRenote">
-		<mk-avatar class="avatar" :user="note.user"/>
-		%fa:retweet%
-		<span>{{ '%i18n:@reposted-by%'.substr(0, '%i18n:@reposted-by%'.indexOf('{')) }}</span>
-		<router-link class="name" :to="note.user | userPage" v-user-preview="note.userId">{{ note.user | userName }}</router-link>
-		<span>{{ '%i18n:@reposted-by%'.substr('%i18n:@reposted-by%'.indexOf('}') + 1) }}</span>
-		<mk-time :time="note.createdAt"/>
-	</div>
-	<article>
+	<mk-renote class="renote" v-if="isRenote" :note="note"/>
+	<article class="article">
 		<mk-avatar class="avatar" :user="appearNote.user"/>
 		<div class="main">
-			<mk-note-header class="header" :note="appearNote"/>
-			<div class="body">
+			<mk-note-header class="header" :note="appearNote" :mini="narrow"/>
+			<div class="body" v-if="appearNote.deletedAt == null">
 				<p v-if="appearNote.cw != null" class="cw">
-					<span class="text" v-if="appearNote.cw != ''">{{ appearNote.cw }}</span>
-					<mk-cw-button v-model="showContent"/>
+					<mfm v-if="appearNote.cw != ''" class="text" :text="appearNote.cw" :author="appearNote.user" :i="$store.state.i" :custom-emojis="appearNote.emojis" />
+					<mk-cw-button v-model="showContent" :note="appearNote"/>
 				</p>
 				<div class="content" v-show="appearNote.cw == null || showContent">
 					<div class="text">
-						<span v-if="appearNote.isHidden" style="opacity: 0.5">%i18n:@private%</span>
-						<a class="reply" v-if="appearNote.reply">%fa:reply%</a>
-						<misskey-flavored-markdown v-if="appearNote.text" :text="appearNote.text" :i="$store.state.i" :class="$style.text"/>
+						<span v-if="appearNote.isHidden" style="opacity: 0.5">{{ $t('private') }}</span>
+						<a class="reply" v-if="appearNote.reply"><fa icon="reply"/></a>
+						<mfm v-if="appearNote.text" :text="appearNote.text" :author="appearNote.user" :i="$store.state.i" :custom-emojis="appearNote.emojis"/>
 						<a class="rp" v-if="appearNote.renote">RN:</a>
 					</div>
 					<div class="files" v-if="appearNote.files.length > 0">
 						<mk-media-list :media-list="appearNote.files"/>
 					</div>
 					<mk-poll v-if="appearNote.poll" :note="appearNote" ref="pollViewer"/>
-					<a class="location" v-if="appearNote.geo" :href="`https://maps.google.com/maps?q=${appearNote.geo.coordinates[1]},${appearNote.geo.coordinates[0]}`" target="_blank">%fa:map-marker-alt% 位置情報</a>
-					<div class="renote" v-if="appearNote.renote"><mk-note-preview :note="appearNote.renote" :mini="mini"/></div>
-					<mk-url-preview v-for="url in urls" :url="url" :key="url" :mini="mini"/>
+					<a class="location" v-if="appearNote.geo" :href="`https://maps.google.com/maps?q=${appearNote.geo.coordinates[1]},${appearNote.geo.coordinates[0]}`" rel="noopener" target="_blank"><fa icon="map-marker-alt"/> 位置情報</a>
+					<div class="renote" v-if="appearNote.renote"><mk-note-preview :note="appearNote.renote"/></div>
+					<mk-url-preview v-for="url in urls" :url="url" :key="url" :compact="compact"/>
 				</div>
 			</div>
-			<footer>
+			<footer v-if="appearNote.deletedAt == null" class="footer">
+				<span class="app" v-if="appearNote.app && narrow && $store.state.settings.showVia">via <b>{{ appearNote.app.name }}</b></span>
 				<mk-reactions-viewer :note="appearNote" ref="reactionsViewer"/>
-				<button class="replyButton" @click="reply()" title="%i18n:@reply%">
-					<template v-if="appearNote.reply">%fa:reply-all%</template>
-					<template v-else>%fa:reply%</template>
+				<button class="replyButton button" @click="reply()" :title="$t('reply')">
+					<template v-if="appearNote.reply"><fa icon="reply-all"/></template>
+					<template v-else><fa icon="reply"/></template>
 					<p class="count" v-if="appearNote.repliesCount > 0">{{ appearNote.repliesCount }}</p>
 				</button>
-				<button class="renoteButton" @click="renote()" title="%i18n:@renote%">
-					%fa:retweet%<p class="count" v-if="appearNote.renoteCount > 0">{{ appearNote.renoteCount }}</p>
+				<button v-if="['public', 'home'].includes(appearNote.visibility)" class="renoteButton button" @click="renote()" :title="$t('renote')">
+					<fa icon="retweet"/>
+					<p class="count" v-if="appearNote.renoteCount > 0">{{ appearNote.renoteCount }}</p>
 				</button>
-				<button class="reactionButton" :class="{ reacted: appearNote.myReaction != null }" @click="react()" ref="reactButton" title="%i18n:@add-reaction%">
-					%fa:plus%<p class="count" v-if="appearNote.reactions_count > 0">{{ appearNote.reactions_count }}</p>
+				<button v-else class="inhibitedButton button">
+					<fa icon="ban"/>
 				</button>
-				<button @click="menu()" ref="menuButton">
-					%fa:ellipsis-h%
+				<button v-if="!isMyNote && appearNote.myReaction == null" class="reactionButton button" @click="react()" ref="reactButton" :title="$t('add-reaction')">
+					<fa icon="plus"/>
+					<p class="count" v-if="Object.values(appearNote.reactions).some(x => x)">{{ Object.values(appearNote.reactions).reduce((a, c) => a + c, 0) }}</p>
+				</button>
+				<button v-if="!isMyNote && appearNote.myReaction != null" class="reactionButton reacted button" @click="undoReact(appearNote)" ref="reactButton" :title="$t('undo-reaction')">
+					<fa icon="minus"/>
+					<p class="count" v-if="Object.values(appearNote.reactions).some(x => x)">{{ Object.values(appearNote.reactions).reduce((a, c) => a + c, 0) }}</p>
+				</button>
+				<button @click="menu()" ref="menuButton" class="button">
+					<fa icon="ellipsis-h"/>
 				</button>
 			</footer>
+			<div class="deleted" v-if="appearNote.deletedAt != null">{{ $t('deleted') }}</div>
 		</div>
 	</article>
-	<div class="replies" v-if="detail && replies.length > 0">
-		<x-sub v-for="note in replies" :key="note.id" :note="note" :mini="mini"/>
-	</div>
+	<x-sub v-for="note in replies" :key="note.id" :note="note"/>
 </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 
 import XSub from './note.sub.vue';
 import noteMixin from '../../../common/scripts/note-mixin';
 import noteSubscriber from '../../../common/scripts/note-subscriber';
 
 export default Vue.extend({
+	i18n: i18n('desktop/views/components/note.vue'),
+
 	components: {
 		XSub
 	},
@@ -98,9 +101,15 @@ export default Vue.extend({
 			required: false,
 			default: false
 		},
-		mini: {
+		compact: {
 			type: Boolean,
 			required: false,
+			default: false
+		},
+	},
+
+	inject: {
+		narrow: {
 			default: false
 		}
 	},
@@ -114,14 +123,14 @@ export default Vue.extend({
 
 	created() {
 		if (this.detail) {
-			(this as any).api('notes/replies', {
+			this.$root.api('notes/children', {
 				noteId: this.appearNote.id,
-				limit: 8
+				limit: 30
 			}).then(replies => {
 				this.replies = replies;
 			});
 
-			(this as any).api('notes/conversation', {
+			this.$root.api('notes/conversation', {
 				noteId: this.appearNote.replyId
 			}).then(conversation => {
 				this.conversation = conversation.reverse();
@@ -135,8 +144,9 @@ export default Vue.extend({
 .note
 	margin 0
 	padding 0
+	overflow hidden
 	background var(--face)
-	border-bottom solid 1px var(--faceDivider)
+	border-bottom solid var(--lineWidth) var(--faceDivider)
 
 	&.mini
 		font-size 13px
@@ -148,7 +158,7 @@ export default Vue.extend({
 				width 20px
 				height 20px
 
-		> article
+		> .article
 			padding 16px 16px 4px
 
 			> .avatar
@@ -173,49 +183,10 @@ export default Vue.extend({
 			border 2px solid var(--primaryAlpha03)
 			border-radius 4px
 
-	> .renote
-		display flex
-		align-items center
-		padding 16px 32px 8px 32px
-		line-height 28px
-		white-space pre
-		color var(--renoteText)
-		background linear-gradient(to bottom, var(--renoteGradient) 0%, var(--face) 100%)
+	> .renote + article
+		padding-top 8px
 
-		.avatar
-			flex-shrink 0
-			display inline-block
-			width 28px
-			height 28px
-			margin 0 8px 0 0
-			border-radius 6px
-
-		[data-fa]
-			margin-right 4px
-
-		> span
-			flex-shrink 0
-
-			&:last-of-type
-				margin-right 8px
-
-		.name
-			overflow hidden
-			flex-shrink 1
-			text-overflow ellipsis
-			white-space nowrap
-			font-weight bold
-
-		> .mk-time
-			display block
-			margin-left auto
-			flex-shrink 0
-			font-size 0.9em
-
-		& + article
-			padding-top 8px
-
-	> article
+	> .article
 		display flex
 		padding 28px 32px 18px 32px
 
@@ -263,24 +234,7 @@ export default Vue.extend({
 						padding 0
 						overflow-wrap break-word
 						color var(--noteText)
-
-						>>> .title
-							display block
-							margin-bottom 4px
-							padding 4px
-							font-size 90%
-							text-align center
-							background var(--mfmTitleBg)
-							border-radius 4px
-
-						>>> .code
-							margin 8px 0
-
-						>>> .quote
-							margin 8px
-							padding 6px 12px
-							color var(--mfmQuote)
-							border-left solid 3px var(--mfmQuoteLine)
+						font-size calc(1em + var(--fontSize))
 
 						> .reply
 							margin-right 8px
@@ -314,11 +268,18 @@ export default Vue.extend({
 
 						> *
 							padding 16px
-							border dashed 1px var(--quoteBorder)
+							border dashed var(--lineWidth) var(--quoteBorder)
 							border-radius 8px
 
-			> footer
-				> button
+			> .footer
+				> .app
+					display block
+					margin-top 0.5em
+					margin-left 0.5em
+					color var(--noteHeaderInfo)
+					font-size 0.8em
+
+				> .button
 					margin 0 28px 0 0
 					padding 0 8px
 					line-height 32px
@@ -343,37 +304,20 @@ export default Vue.extend({
 					&.reactionButton:hover
 						color var(--noteActionsReactionHover)
 
+					&.inhibitedButton
+						cursor not-allowed
+
 					> .count
 						display inline
 						margin 0 0 0 8px
-						color #999
+						color var(--text)
+						opacity 0.7
 
 					&.reacted, &.reacted:hover
 						color var(--noteActionsReactionHover)
 
-</style>
+			> .deleted
+				color var(--noteText)
+				opacity 0.7
 
-<style lang="stylus" module>
-.text
-
-	code
-		padding 4px 8px
-		margin 0 0.5em
-		font-size 80%
-		color #525252
-		background #f8f8f8
-		border-radius 2px
-
-	pre > code
-		padding 16px
-		margin 0
-
-	[data-is-me]:after
-		content "you"
-		padding 0 4px
-		margin-left 4px
-		font-size 80%
-		color var(--primaryForeground)
-		background var(--primary)
-		border-radius 4px
 </style>

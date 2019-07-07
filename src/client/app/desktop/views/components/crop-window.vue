@@ -1,27 +1,31 @@
 <template>
 	<mk-window ref="window" is-modal width="800px" :can-close="false">
-		<span slot="header">%fa:crop%{{ title }}</span>
+		<template #header><fa icon="crop"/>{{ title }}</template>
 		<div class="body">
 			<vue-cropper ref="cropper"
-				:src="image.url"
+				:src="imageUrl"
 				:view-mode="1"
 				:aspect-ratio="aspectRatio"
 				:container-style="{ width: '100%', 'max-height': '400px' }"
 			/>
 		</div>
 		<div :class="$style.actions">
-			<button :class="$style.skip" @click="skip">%i18n:@skip%</button>
-			<button :class="$style.cancel" @click="cancel">%i18n:@cancel%</button>
-			<button :class="$style.ok" @click="ok">%i18n:@ok%</button>
+			<button :class="$style.skip" @click="skip">{{ $t('skip') }}</button>
+			<button :class="$style.cancel" @click="cancel">{{ $t('cancel') }}</button>
+			<button :class="$style.ok" @click="ok">{{ $t('ok') }}</button>
 		</div>
 	</mk-window>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import VueCropper from 'vue-cropperjs';
+import 'cropperjs/dist/cropper.css';
+import * as url from '../../../../../prelude/url';
 
 export default Vue.extend({
+	i18n: i18n('desktop/views/components/crop-window.vue'),
 	components: {
 		VueCropper
 	},
@@ -38,6 +42,13 @@ export default Vue.extend({
 			type: Number,
 			required: true
 		}
+	},
+	computed: {
+		imageUrl() {
+			return `/proxy/?${url.query({
+				url: this.image.url
+			})}`;
+		},
 	},
 	methods: {
 		ok() {
@@ -64,7 +75,7 @@ export default Vue.extend({
 
 
 .header
-	> [data-fa]
+	> [data-icon]
 		margin-right 4px
 
 .img

@@ -2,24 +2,31 @@ import $ from 'cafy';
 import * as bcrypt from 'bcryptjs';
 import * as speakeasy from 'speakeasy';
 import * as QRCode from 'qrcode';
-import User, { ILocalUser } from '../../../../../models/user';
 import config from '../../../../../config';
+import define from '../../../define';
+import { UserProfiles } from '../../../../../models';
+import { ensure } from '../../../../../prelude/ensure';
 
 export const meta = {
 	requireCredential: true,
-	secure: true
+
+	secure: true,
+
+	params: {
+		password: {
+			validator: $.str
+		}
+	}
 };
 
-export default async (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'password' parameter
-	const [password, passwordErr] = $.str.get(params.password);
-	if (passwordErr) return rej('invalid password param');
+export default define(meta, async (ps, user) => {
+	const profile = await UserProfiles.findOne(user.id).then(ensure);
 
 	// Compare password
-	const same = await bcrypt.compare(password, user.password);
+	const same = await bcrypt.compare(ps.password, profile.password!);
 
 	if (!same) {
-		return rej('incorrect password');
+		throw new Error('incorrect password');
 	}
 
 	// Generate user's secret key
@@ -27,24 +34,22 @@ export default async (params: any, user: ILocalUser) => new Promise(async (res, 
 		length: 32
 	});
 
-	await User.update(user._id, {
-		$set: {
-			twoFactorTempSecret: secret.base32
-		}
+	await UserProfiles.update({ userId: user.id }, {
+		twoFactorTempSecret: secret.base32
 	});
 
 	// Get the data URL of the authenticator URL
-	QRCode.toDataURL(speakeasy.otpauthURL({
+	const dataUrl = await QRCode.toDataURL(speakeasy.otpauthURL({
 		secret: secret.base32,
 		encoding: 'base32',
 		label: user.username,
 		issuer: config.host
-	}), (err, data_url) => {
-		res({
-			qr: data_url,
-			secret: secret.base32,
-			label: user.username,
-			issuer: config.host
-		});
-	});
+	}));
+
+	return {
+		qr: dataUrl,
+		secret: secret.base32,
+		label: user.username,
+		issuer: config.host
+	};
 });

@@ -1,38 +1,51 @@
 <template>
-<div class="mk-visibility-chooser">
+<div class="gqyayizv">
 	<div class="backdrop" ref="backdrop" @click="close"></div>
-	<div class="popover" :class="{ compact }" ref="popover">
+	<div class="popover" :class="{ isMobile: $root.isMobile }" ref="popover">
 		<div @click="choose('public')" :class="{ active: v == 'public' }">
-			<div>%fa:globe%</div>
+			<div><fa icon="globe"/></div>
 			<div>
-				<span>%i18n:@public%</span>
+				<span>{{ $t('public') }}</span>
 			</div>
 		</div>
 		<div @click="choose('home')" :class="{ active: v == 'home' }">
-			<div>%fa:home%</div>
+			<div><fa icon="home"/></div>
 			<div>
-				<span>%i18n:@home%</span>
-				<span>%i18n:@home-desc%</span>
+				<span>{{ $t('home') }}</span>
+				<span>{{ $t('home-desc') }}</span>
 			</div>
 		</div>
 		<div @click="choose('followers')" :class="{ active: v == 'followers' }">
-			<div>%fa:unlock%</div>
+			<div><fa icon="unlock"/></div>
 			<div>
-				<span>%i18n:@followers%</span>
-				<span>%i18n:@followers-desc%</span>
+				<span>{{ $t('followers') }}</span>
+				<span>{{ $t('followers-desc') }}</span>
 			</div>
 		</div>
 		<div @click="choose('specified')" :class="{ active: v == 'specified' }">
-			<div>%fa:envelope%</div>
+			<div><fa icon="envelope"/></div>
 			<div>
-				<span>%i18n:@specified%</span>
-				<span>%i18n:@specified-desc%</span>
+				<span>{{ $t('specified') }}</span>
+				<span>{{ $t('specified-desc') }}</span>
 			</div>
 		</div>
-		<div @click="choose('private')" :class="{ active: v == 'private' }">
-			<div>%fa:lock%</div>
+		<div @click="choose('local-public')" :class="{ active: v == 'local-public' }">
+			<div><fa icon="globe"/></div>
 			<div>
-				<span>%i18n:@private%</span>
+				<span>{{ $t('local-public') }}</span>
+				<span>{{ $t('local-public-desc') }}</span>
+			</div>
+		</div>
+		<div @click="choose('local-home')" :class="{ active: v == 'local-home' }">
+			<div><fa icon="home"/></div>
+			<div>
+				<span>{{ $t('local-home') }}</span>
+			</div>
+		</div>
+		<div @click="choose('local-followers')" :class="{ active: v == 'local-followers' }">
+			<div><fa icon="unlock"/></div>
+			<div>
+				<span>{{ $t('local-followers') }}</span>
 			</div>
 		</div>
 	</div>
@@ -41,13 +54,23 @@
 
 <script lang="ts">
 import Vue from 'vue';
-import * as anime from 'animejs';
+import i18n from '../../../i18n';
+import anime from 'animejs';
 
 export default Vue.extend({
-	props: ['source', 'compact'],
+	i18n: i18n('common/views/components/visibility-chooser.vue'),
+	props: {
+		source: {
+			required: true
+		},
+		currentVisibility: {
+			type: String,
+			required: false
+		}
+	},
 	data() {
 		return {
-			v: this.$store.state.settings.rememberNoteVisibility ? (this.$store.state.device.visibility || this.$store.state.settings.defaultNoteVisibility) : this.$store.state.settings.defaultNoteVisibility
+			v: this.$store.state.settings.rememberNoteVisibility ? (this.$store.state.device.visibility || this.$store.state.settings.defaultNoteVisibility) : (this.currentVisibility || this.$store.state.settings.defaultNoteVisibility)
 		}
 	},
 	mounted() {
@@ -61,7 +84,7 @@ export default Vue.extend({
 			let left;
 			let top;
 
-			if (this.compact) {
+			if (this.$root.isMobile) {
 				const x = rect.left + window.pageXOffset + (this.source.offsetWidth / 2);
 				const y = rect.top + window.pageYOffset + (this.source.offsetHeight / 2);
 				left = (x - (width / 2));
@@ -127,9 +150,7 @@ export default Vue.extend({
 </script>
 
 <style lang="stylus" scoped>
-$border-color = rgba(27, 31, 35, 0.15)
-
-.mk-visibility-chooser
+.gqyayizv
 	position initial
 
 	> .backdrop
@@ -149,39 +170,27 @@ $border-color = rgba(27, 31, 35, 0.15)
 		width 240px
 		padding 8px 0
 		background $bgcolor
-		border 1px solid $border-color
 		border-radius 4px
 		box-shadow 0 3px 12px rgba(27, 31, 35, 0.15)
 		transform scale(0.5)
 		opacity 0
 
-		$balloon-size = 10px
+		&:not(.isMobile)
+			$arrow-size = 10px
 
-		&:not(.compact)
-			margin-top $balloon-size
-			transform-origin center -($balloon-size)
+			margin-top $arrow-size
+			transform-origin center -($arrow-size)
 
 			&:before
 				content ""
 				display block
 				position absolute
-				top -($balloon-size * 2)
-				left s('calc(50% - %s)', $balloon-size)
-				border-top solid $balloon-size transparent
-				border-left solid $balloon-size transparent
-				border-right solid $balloon-size transparent
-				border-bottom solid $balloon-size $border-color
-
-			&:after
-				content ""
-				display block
-				position absolute
-				top -($balloon-size * 2) + 1.5px
-				left s('calc(50% - %s)', $balloon-size)
-				border-top solid $balloon-size transparent
-				border-left solid $balloon-size transparent
-				border-right solid $balloon-size transparent
-				border-bottom solid $balloon-size $bgcolor
+				top -($arrow-size * 2)
+				left s('calc(50% - %s)', $arrow-size)
+				border-top solid $arrow-size transparent
+				border-left solid $arrow-size transparent
+				border-right solid $arrow-size transparent
+				border-bottom solid $arrow-size $bgcolor
 
 		> div
 			display flex
@@ -220,4 +229,5 @@ $border-color = rgba(27, 31, 35, 0.15)
 
 				> span:last-child:not(:first-child)
 					opacity 0.6
+
 </style>

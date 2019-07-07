@@ -1,16 +1,17 @@
 <template>
 <div class="mkw-messaging">
-	<mk-widget-container :show-header="props.design == 0">
-		<template slot="header">%fa:comments%%i18n:@title%</template>
-		<button slot="func" @click="add">%fa:plus%</button>
+	<ui-container :show-header="props.design == 0">
+		<template #header><fa icon="comments"/>{{ $t('@.messaging') }}</template>
+		<template #func><button @click="add"><fa icon="plus"/></button></template>
 
-		<mk-messaging ref="index" compact @navigate="navigate"/>
-	</mk-widget-container>
+		<x-messaging ref="index" compact @navigate="navigate" @navigateGroup="navigateGroup"/>
+	</ui-container>
 </div>
 </template>
 
 <script lang="ts">
 import define from '../../../common/define-widget';
+import i18n from '../../../i18n';
 import MkMessagingRoomWindow from '../components/messaging-room-window.vue';
 import MkMessagingWindow from '../components/messaging-window.vue';
 
@@ -20,14 +21,23 @@ export default define({
 		design: 0
 	})
 }).extend({
+	i18n: i18n(''),
+	components: {
+		XMessaging: () => import('../../../common/views/components/messaging.vue').then(m => m.default)
+	},
 	methods: {
 		navigate(user) {
-			(this as any).os.new(MkMessagingRoomWindow, {
+			this.$root.new(MkMessagingRoomWindow, {
 				user: user
 			});
 		},
+		navigateGroup(group) {
+			this.$root.new(MkMessagingRoomWindow, {
+				group: group
+			});
+		},
 		add() {
-			(this as any).os.new(MkMessagingWindow);
+			this.$root.new(MkMessagingWindow);
 		},
 		func() {
 			if (this.props.design == 1) {

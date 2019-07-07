@@ -1,7 +1,8 @@
-import $ from 'cafy'; import ID from '../../../../../misc/cafy-id';
-import DriveFolder, { pack } from '../../../../../models/drive-folder';
-import { ILocalUser } from '../../../../../models/user';
-import getParams from '../../../get-params';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
+import define from '../../../define';
+import { ApiError } from '../../../error';
+import { DriveFolders } from '../../../../../models';
 
 export const meta = {
 	stability: 'stable',
@@ -11,37 +12,49 @@ export const meta = {
 		'en-US': 'Get specified folder of drive.'
 	},
 
+	tags: ['drive'],
+
 	requireCredential: true,
 
-	kind: 'drive-read',
+	kind: 'read:drive',
 
 	params: {
-		folderId: $.type(ID).note({
+		folderId: {
+			validator: $.type(ID),
 			desc: {
 				'ja-JP': '対象のフォルダID',
 				'en-US': 'Target folder ID'
 			}
-		})
+		}
+	},
+
+	res: {
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		ref: 'DriveFolder',
+	},
+
+	errors: {
+		noSuchFolder: {
+			message: 'No such folder.',
+			code: 'NO_SUCH_FOLDER',
+			id: 'd74ab9eb-bb09-4bba-bf24-fb58f761e1e9'
+		},
 	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) return rej(psErr);
-
+export default define(meta, async (ps, user) => {
 	// Get folder
-	const folder = await DriveFolder
-		.findOne({
-			_id: ps.folderId,
-			userId: user._id
-		});
+	const folder = await DriveFolders.findOne({
+		id: ps.folderId,
+		userId: user.id
+	});
 
-	if (folder === null) {
-		return rej('folder-not-found');
+	if (folder == null) {
+		throw new ApiError(meta.errors.noSuchFolder);
 	}
 
-	// Serialize
-	res(await pack(folder, {
+	return await DriveFolders.pack(folder, {
 		detail: true
-	}));
+	});
 });

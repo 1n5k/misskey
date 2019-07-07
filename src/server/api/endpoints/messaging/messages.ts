@@ -1,103 +1,156 @@
-import $ from 'cafy'; import ID from '../../../../misc/cafy-id';
-import Message from '../../../../models/messaging-message';
-import User, { ILocalUser } from '../../../../models/user';
-import { pack } from '../../../../models/messaging-message';
-import read from '../../common/read-messaging-message';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
+import define from '../../define';
+import { ApiError } from '../../error';
+import { getUser } from '../../common/getters';
+import { MessagingMessages, UserGroups, UserGroupJoinings } from '../../../../models';
+import { makePaginationQuery } from '../../common/make-pagination-query';
+import { Brackets } from 'typeorm';
+import { readUserMessagingMessage, readGroupMessagingMessage } from '../../common/read-messaging-message';
 
 export const meta = {
 	desc: {
-		'ja-JP': '指定したユーザーとのMessagingのメッセージ一覧を取得します。',
+		'ja-JP': 'トークメッセージ一覧を取得します。',
 		'en-US': 'Get messages of messaging.'
 	},
 
+	tags: ['messaging'],
+
 	requireCredential: true,
 
-	kind: 'messaging-read'
+	kind: 'read:messaging',
+
+	params: {
+		userId: {
+			validator: $.optional.type(ID),
+			desc: {
+				'ja-JP': '対象のユーザーのID',
+				'en-US': 'Target user ID'
+			}
+		},
+
+		groupId: {
+			validator: $.optional.type(ID),
+			desc: {
+				'ja-JP': '対象のグループのID',
+				'en-US': 'Target group ID'
+			}
+		},
+
+		limit: {
+			validator: $.optional.num.range(1, 100),
+			default: 10
+		},
+
+		sinceId: {
+			validator: $.optional.type(ID),
+		},
+
+		untilId: {
+			validator: $.optional.type(ID),
+		},
+
+		markAsRead: {
+			validator: $.optional.bool,
+			default: true
+		}
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'MessagingMessage',
+		}
+	},
+
+	errors: {
+		noSuchUser: {
+			message: 'No such user.',
+			code: 'NO_SUCH_USER',
+			id: '11795c64-40ea-4198-b06e-3c873ed9039d'
+		},
+
+		noSuchGroup: {
+			message: 'No such group.',
+			code: 'NO_SUCH_GROUP',
+			id: 'c4d9f88c-9270-4632-b032-6ed8cee36f7f'
+		},
+
+		groupAccessDenied: {
+			message: 'You can not read messages of groups that you have not joined.',
+			code: 'GROUP_ACCESS_DENIED',
+			id: 'a053a8dd-a491-4718-8f87-50775aad9284'
+		},
+	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'userId' parameter
-	const [recipientId, recipientIdErr] = $.type(ID).get(params.userId);
-	if (recipientIdErr) return rej('invalid userId param');
-
-	// Fetch recipient
-	const recipient = await User.findOne({
-		_id: recipientId
-	}, {
-			fields: {
-				_id: true
-			}
+export default define(meta, async (ps, user) => {
+	if (ps.userId != null) {
+		// Fetch recipient (user)
+		const recipient = await getUser(ps.userId).catch(e => {
+			if (e.id === '15348ddd-432d-49c2-8a5a-8069753becff') throw new ApiError(meta.errors.noSuchUser);
+			throw e;
 		});
 
-	if (recipient === null) {
-		return rej('user not found');
-	}
+		const query = makePaginationQuery(MessagingMessages.createQueryBuilder('message'), ps.sinceId, ps.untilId)
+			.andWhere(new Brackets(qb => { qb
+				.where(new Brackets(qb => { qb
+					.where('message.userId = :meId')
+					.andWhere('message.recipientId = :recipientId');
+				}))
+				.orWhere(new Brackets(qb => { qb
+					.where('message.userId = :recipientId')
+					.andWhere('message.recipientId = :meId');
+				}));
+			}))
+			.setParameter('meId', user.id)
+			.setParameter('recipientId', recipient.id);
 
-	// Get 'markAsRead' parameter
-	const [markAsRead = true, markAsReadErr] = $.bool.optional.get(params.markAsRead);
-	if (markAsReadErr) return rej('invalid markAsRead param');
+		const messages = await query.take(ps.limit!).getMany();
 
-	// Get 'limit' parameter
-	const [limit = 10, limitErr] = $.num.optional.range(1, 100).get(params.limit);
-	if (limitErr) return rej('invalid limit param');
+		// Mark all as read
+		if (ps.markAsRead) {
+			readUserMessagingMessage(user.id, recipient.id, messages.filter(m => m.recipientId === user.id).map(x => x.id));
+		}
 
-	// Get 'sinceId' parameter
-	const [sinceId, sinceIdErr] = $.type(ID).optional.get(params.sinceId);
-	if (sinceIdErr) return rej('invalid sinceId param');
-
-	// Get 'untilId' parameter
-	const [untilId, untilIdErr] = $.type(ID).optional.get(params.untilId);
-	if (untilIdErr) return rej('invalid untilId param');
-
-	// Check if both of sinceId and untilId is specified
-	if (sinceId && untilId) {
-		return rej('cannot set sinceId and untilId');
-	}
-
-	const query = {
-		$or: [{
-			userId: user._id,
-			recipientId: recipient._id
-		}, {
-			userId: recipient._id,
-			recipientId: user._id
-		}]
-	} as any;
-
-	const sort = {
-		_id: -1
-	};
-
-	if (sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: sinceId
-		};
-	} else if (untilId) {
-		query._id = {
-			$lt: untilId
-		};
-	}
-
-	// Issue query
-	const messages = await Message
-		.find(query, {
-			limit: limit,
-			sort: sort
-		});
-
-	// Serialize
-	res(await Promise.all(messages.map(async message =>
-		await pack(message, user, {
+		return await Promise.all(messages.map(message => MessagingMessages.pack(message, user, {
 			populateRecipient: false
-		}))));
+		})));
+	} else if (ps.groupId != null) {
+		// Fetch recipient (group)
+		const recipientGroup = await UserGroups.findOne(ps.groupId);
 
-	if (messages.length === 0) {
-		return;
-	}
+		if (recipientGroup == null) {
+			throw new ApiError(meta.errors.noSuchGroup);
+		}
 
-	// Mark all as read
-	if (markAsRead) {
-		read(user._id, recipient._id, messages);
+		// check joined
+		const joining = await UserGroupJoinings.findOne({
+			userId: user.id,
+			userGroupId: recipientGroup.id
+		});
+
+		if (joining == null) {
+			throw new ApiError(meta.errors.groupAccessDenied);
+		}
+
+		const query = makePaginationQuery(MessagingMessages.createQueryBuilder('message'), ps.sinceId, ps.untilId)
+			.andWhere(`message.groupId = :groupId`, { groupId: recipientGroup.id });
+
+		const messages = await query.take(ps.limit!).getMany();
+
+		// Mark all as read
+		if (ps.markAsRead) {
+			readGroupMessagingMessage(user.id, recipientGroup.id, messages.map(x => x.id));
+		}
+
+		return await Promise.all(messages.map(message => MessagingMessages.pack(message, user, {
+			populateGroup: false
+		})));
+	} else {
+		throw new Error();
 	}
 });

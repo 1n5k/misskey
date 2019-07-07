@@ -1,26 +1,27 @@
 import $ from 'cafy';
-import User from '../../../../models/user';
-import { validateUsername } from '../../../../models/user';
+import define from '../../define';
+import { Users } from '../../../../models';
 
-/**
- * Check available username
- */
-export default async (params: any) => new Promise(async (res, rej) => {
-	// Get 'username' parameter
-	const [username, usernameError] = $.str.pipe(validateUsername).get(params.username);
-	if (usernameError) return rej('invalid username param');
+export const meta = {
+	tags: ['users'],
 
+	requireCredential: false,
+
+	params: {
+		username: {
+			validator: $.use(Users.validateLocalUsername)
+		}
+	}
+};
+
+export default define(meta, async (ps) => {
 	// Get exist
-	const exist = await User
-		.count({
-			host: null,
-			usernameLower: username.toLowerCase()
-		}, {
-			limit: 1
-		});
-
-	// Reply
-	res({
-		available: exist === 0
+	const exist = await Users.count({
+		host: null,
+		usernameLower: ps.username.toLowerCase()
 	});
+
+	return {
+		available: exist === 0
+	};
 });

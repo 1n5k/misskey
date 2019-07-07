@@ -1,22 +1,25 @@
 <template>
 <div class="mkw-notifications">
-	<mk-widget-container :show-header="!props.compact">
-		<template slot="header">%fa:R bell%%i18n:@title%</template>
-		<!-- <button slot="func" title="%i18n:@settings%" @click="settings">%fa:cog%</button> -->
+	<ui-container :show-header="!props.compact">
+		<template #header><fa :icon="['far', 'bell']"/>{{ $t('title') }}</template>
+		<!-- <button #func :title="$t('title')" @click="settings"><fa icon="cog"/></button> -->
 
 		<mk-notifications :class="$style.notifications"/>
-	</mk-widget-container>
+	</ui-container>
 </div>
 </template>
 
 <script lang="ts">
 import define from '../../../common/define-widget';
+import i18n from '../../../i18n';
+
 export default define({
 	name: 'notifications',
 	props: () => ({
 		compact: false
 	})
 }).extend({
+	i18n: i18n('desktop/views/widgets/notifications.vue'),
 	methods: {
 		settings() {
 			alert('not implemented yet');

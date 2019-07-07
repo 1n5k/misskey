@@ -8,8 +8,12 @@
 			>
 				<h1><slot name="header"></slot></h1>
 				<div>
-					<button class="popout" v-if="popoutUrl" @mousedown.stop="() => {}" @click="popout" title="%i18n:@popout%">%fa:R window-restore%</button>
-					<button class="close" v-if="canClose" @mousedown.stop="() => {}" @click="close" title="%i18n:@close%">%fa:times%</button>
+					<button class="popout" v-if="popoutUrl" @mousedown.stop="() => {}" @click="popout" :title="$t('popout')">
+						<i><fa :icon="['far', 'window-restore']"/></i>
+					</button>
+					<button class="close" v-if="canClose" @mousedown.stop="() => {}" @click="close" :title="$t('close')">
+						<i><fa icon="times"/></i>
+					</button>
 				</div>
 			</header>
 			<div class="content">
@@ -32,7 +36,8 @@
 
 <script lang="ts">
 import Vue from 'vue';
-import * as anime from 'animejs';
+import i18n from '../../../i18n';
+import anime from 'animejs';
 import contains from '../../../common/scripts/contains';
 
 const minHeight = 40;
@@ -51,6 +56,7 @@ function dragClear(fn) {
 }
 
 export default Vue.extend({
+	i18n: i18n('desktop/views/components/window.vue'),
 	props: {
 		isModal: {
 			type: Boolean,
@@ -83,12 +89,6 @@ export default Vue.extend({
 		}
 	},
 
-	data() {
-		return {
-			preventMount: false
-		};
-	},
-
 	computed: {
 		isFlexible(): boolean {
 			return this.height == 'auto';
@@ -99,21 +99,11 @@ export default Vue.extend({
 	},
 
 	created() {
-		if (this.$store.state.device.autoPopout && this.popoutUrl) {
-			this.popout();
-			this.preventMount = true;
-		} else {
-			// ウィンドウをウィンドウシステムに登録
-			(this as any).os.windows.add(this);
-		}
+		// ウィンドウをウィンドウシステムに登録
+		this.$root.os.windows.add(this);
 	},
 
 	mounted() {
-		if (this.preventMount) {
-			this.destroyDom();
-			return;
-		}
-
 		this.$nextTick(() => {
 			const main = this.$refs.main as any;
 			main.style.top = '15%';
@@ -127,7 +117,7 @@ export default Vue.extend({
 
 	destroyed() {
 		// ウィンドウをウィンドウシステムから削除
-		(this as any).os.windows.remove(this);
+		this.$root.os.windows.remove(this);
 
 		window.removeEventListener('resize', this.onBrowserResize);
 	},
@@ -190,7 +180,7 @@ export default Vue.extend({
 				opacity: 0,
 				scale: 0.8,
 				duration: this.animation ? 300 : 0,
-				easing: [0.5, -0.5, 1, 0.5]
+				easing: 'cubicBezier(0.5, -0.5, 1, 0.5)'
 			});
 
 			setTimeout(() => {
@@ -228,12 +218,12 @@ export default Vue.extend({
 		top() {
 			let z = 0;
 
-			(this as any).os.windows.getAll().forEach(w => {
-				if (w == this) return;
+			const ws = Array.from(this.$root.os.windows.getAll()).filter(w => w != this);
+			for (const w of ws) {
 				const m = w.$refs.main;
 				const mz = Number(document.defaultView.getComputedStyle(m, null).zIndex);
 				if (mz > z) z = mz;
-			});
+			}
 
 			if (z > 0) {
 				(this.$refs.main as any).style.zIndex = z + 1;
@@ -490,7 +480,7 @@ export default Vue.extend({
 		&:focus
 			&:not([data-is-modal])
 				> .body
-						box-shadow 0 0 0px 1px var(--primaryAlpha05), 0 2px 12px 0 var(--desktopWindowShadow)
+						box-shadow 0 0 0 1px var(--primaryAlpha05), 0 2px 12px 0 var(--desktopWindowShadow)
 
 		> .handle
 			$size = 8px
@@ -612,7 +602,8 @@ export default Vue.extend({
 						&:active
 							color var(--faceTextButtonActive)
 
-						> [data-fa]
+						> i
+							display inline-block
 							padding 0
 							width $header-height
 							line-height $header-height
@@ -620,6 +611,7 @@ export default Vue.extend({
 
 			> .content
 				height 100%
+				overflow auto
 
 	&:not([flexible])
 		> .main > .body > .content

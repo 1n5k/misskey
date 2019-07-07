@@ -1,38 +1,44 @@
 <template>
-<form class="search" @submit.prevent="onSubmit">
-	%fa:search%
-	<input v-model="q" type="search" placeholder="%i18n:@placeholder%"/>
+<form class="wlvfdpkp" @submit.prevent="onSubmit">
+	<i><fa icon="search"/></i>
+	<input v-model="q" type="search" :placeholder="$t('placeholder')" v-autocomplete="{ model: 'q' }"/>
 	<div class="result"></div>
 </form>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
+import { search } from '../../../common/scripts/search';
 
 export default Vue.extend({
+	i18n: i18n('desktop/views/components/ui.header.search.vue'),
 	data() {
 		return {
-			q: ''
+			q: '',
+			wait: false
 		};
 	},
 	methods: {
-		onSubmit() {
-			if (this.q.startsWith('#')) {
-				this.$router.push(`/tags/${encodeURIComponent(this.q.substr(1))}`);
-			} else {
-				this.$router.push(`/search?q=${encodeURIComponent(this.q)}`);
-			}
+		async onSubmit() {
+			if (this.wait) return;
+
+			this.wait = true;
+			search(this, this.q).finally(() => {
+				this.wait = false;
+				this.q = '';
+			});
 		}
 	}
 });
 </script>
 
 <style lang="stylus" scoped>
-.search
+.wlvfdpkp
 	@media (max-width 800px)
 		display none !important
 
-	> [data-fa]
+	> i
 		display block
 		position absolute
 		top 0

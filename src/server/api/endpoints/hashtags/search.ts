@@ -1,52 +1,59 @@
 import $ from 'cafy';
-import Hashtag from '../../../../models/hashtag';
-import getParams from '../../get-params';
-const escapeRegexp = require('escape-regexp');
+import define from '../../define';
+import { Hashtags } from '../../../../models';
 
 export const meta = {
 	desc: {
 		'ja-JP': 'ハッシュタグを検索します。'
 	},
 
+	tags: ['hashtags'],
+
 	requireCredential: false,
 
 	params: {
-		limit: $.num.optional.range(1, 100).note({
+		limit: {
+			validator: $.optional.num.range(1, 100),
 			default: 10,
 			desc: {
 				'ja-JP': '最大数'
 			}
-		}),
+		},
 
-		query: $.str.note({
+		query: {
+			validator: $.str,
 			desc: {
 				'ja-JP': 'クエリ'
 			}
-		}),
+		},
 
-		offset: $.num.optional.min(0).note({
+		offset: {
+			validator: $.optional.num.min(0),
 			default: 0,
 			desc: {
 				'ja-JP': 'オフセット'
 			}
-		})
-	}
+		}
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'string' as const,
+			optional: false as const, nullable: false as const,
+		}
+	},
 };
 
-export default (params: any) => new Promise(async (res, rej) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) return rej(psErr);
+export default define(meta, async (ps) => {
+	const hashtags = await Hashtags.createQueryBuilder('tag')
+		.where('tag.name like :q', { q: ps.query.toLowerCase() + '%' })
+		.orderBy('tag.count', 'DESC')
+		.groupBy('tag.id')
+		.take(ps.limit!)
+		.skip(ps.offset)
+		.getMany();
 
-	const hashtags = await Hashtag
-		.find({
-			tag: new RegExp('^' + escapeRegexp(ps.query.toLowerCase()))
-		}, {
-			sort: {
-				count: -1
-			},
-			limit: ps.limit,
-			skip: ps.offset
-		});
-
-	res(hashtags.map(tag => tag.tag));
+	return hashtags.map(tag => tag.name);
 });

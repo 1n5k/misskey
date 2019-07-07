@@ -1,54 +1,106 @@
 import * as Minio from 'minio';
-import DriveFile, { DriveFileChunk, IDriveFile } from '../../models/drive-file';
-import DriveFileThumbnail, { DriveFileThumbnailChunk } from '../../models/drive-file-thumbnail';
-import config from '../../config';
-import driveChart from '../../chart/drive';
-import perUserDriveChart from '../../chart/per-user-drive';
+import { DriveFile } from '../../models/entities/drive-file';
+import { InternalStorage } from './internal-storage';
+import { DriveFiles, Instances, Notes } from '../../models';
+import { driveChart, perUserDriveChart, instanceChart } from '../chart';
+import { createDeleteObjectStorageFileJob } from '../../queue';
+import { fetchMeta } from '../../misc/fetch-meta';
 
-export default async function(file: IDriveFile, isExpired = false) {
-	if (file.metadata.storage == 'minio') {
-		const minio = new Minio.Client(config.drive.config);
+export async function deleteFile(file: DriveFile, isExpired = false) {
+	if (file.storedInternal) {
+		InternalStorage.del(file.accessKey!);
 
-		// 後方互換性のため、file.metadata.storageProps.key があるかどうかチェックしています。
-		// 将来的には const obj = file.metadata.storageProps.key; とします。
-		const obj = file.metadata.storageProps.key ? file.metadata.storageProps.key : `${config.drive.prefix}/${file.metadata.storageProps.id}`;
-		await minio.removeObject(config.drive.bucket, obj);
+		if (file.thumbnailUrl) {
+			InternalStorage.del(file.thumbnailAccessKey!);
+		}
 
-		if (file.metadata.thumbnailUrl) {
-			// 後方互換性のため、file.metadata.storageProps.thumbnailKey があるかどうかチェックしています。
-			// 将来的には const thumbnailObj = file.metadata.storageProps.thumbnailKey; とします。
-			const thumbnailObj = file.metadata.storageProps.thumbnailKey ? file.metadata.storageProps.thumbnailKey : `${config.drive.prefix}/${file.metadata.storageProps.id}-thumbnail`;
-			await minio.removeObject(config.drive.bucket, thumbnailObj);
+		if (file.webpublicUrl) {
+			InternalStorage.del(file.webpublicAccessKey!);
+		}
+	} else if (!file.isLink) {
+		createDeleteObjectStorageFileJob(file.accessKey!);
+
+		if (file.thumbnailUrl) {
+			createDeleteObjectStorageFileJob(file.thumbnailAccessKey!);
+		}
+
+		if (file.webpublicUrl) {
+			createDeleteObjectStorageFileJob(file.webpublicAccessKey!);
 		}
 	}
 
-	// チャンクをすべて削除
-	await DriveFileChunk.remove({
-		files_id: file._id
-	});
+	postProcess(file, isExpired);
+}
 
-	await DriveFile.update({ _id: file._id }, {
-		$set: {
-			'metadata.deletedAt': new Date(),
-			'metadata.isExpired': isExpired
+export async function deleteFileSync(file: DriveFile, isExpired = false) {
+	if (file.storedInternal) {
+		InternalStorage.del(file.accessKey!);
+
+		if (file.thumbnailUrl) {
+			InternalStorage.del(file.thumbnailAccessKey!);
 		}
-	});
 
-	//#region サムネイルもあれば削除
-	const thumbnail = await DriveFileThumbnail.findOne({
-		'metadata.originalId': file._id
-	});
+		if (file.webpublicUrl) {
+			InternalStorage.del(file.webpublicAccessKey!);
+		}
+	} else if (!file.isLink) {
+		const promises = [];
 
-	if (thumbnail) {
-		await DriveFileThumbnailChunk.remove({
-			files_id: thumbnail._id
+		promises.push(deleteObjectStorageFile(file.accessKey!));
+
+		if (file.thumbnailUrl) {
+			promises.push(deleteObjectStorageFile(file.thumbnailAccessKey!));
+		}
+
+		if (file.webpublicUrl) {
+			promises.push(deleteObjectStorageFile(file.webpublicAccessKey!));
+		}
+
+		await Promise.all(promises);
+	}
+
+	postProcess(file, isExpired);
+}
+
+function postProcess(file: DriveFile, isExpired = false) {
+	// リモートファイル期限切れ削除後は直リンクにする
+	if (isExpired && file.userHost !== null && file.uri != null) {
+		DriveFiles.update(file.id, {
+			isLink: true,
+			url: file.uri,
+			thumbnailUrl: file.uri,
+			webpublicUrl: file.uri
 		});
+	} else {
+		DriveFiles.delete(file.id);
 
-		await DriveFileThumbnail.remove({ _id: thumbnail._id });
+		// TODO: トランザクション
+		Notes.createQueryBuilder().delete()
+			.where(':id = ANY(fileIds)', { id: file.id })
+			.execute();
 	}
-	//#endregion
 
 	// 統計を更新
 	driveChart.update(file, false);
 	perUserDriveChart.update(file, false);
+	if (file.userHost !== null) {
+		instanceChart.updateDrive(file, false);
+		Instances.decrement({ host: file.userHost }, 'driveUsage', file.size);
+		Instances.decrement({ host: file.userHost }, 'driveFiles', 1);
+	}
+}
+
+export async function deleteObjectStorageFile(key: string) {
+	const meta = await fetchMeta();
+
+	const minio = new Minio.Client({
+		endPoint: meta.objectStorageEndpoint!,
+		region: meta.objectStorageRegion ? meta.objectStorageRegion : undefined,
+		port: meta.objectStoragePort ? meta.objectStoragePort : undefined,
+		useSSL: meta.objectStorageUseSSL,
+		accessKey: meta.objectStorageAccessKey!,
+		secretKey: meta.objectStorageSecretKey!,
+	});
+
+	await minio.removeObject(meta.objectStorageBucket!, key);
 }

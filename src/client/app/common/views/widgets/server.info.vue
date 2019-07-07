@@ -1,8 +1,11 @@
 <template>
 <div class="info">
-	<p>Maintainer: <b><a :href="meta.maintainer.url" target="_blank">{{ meta.maintainer.name }}</a></b></p>
+	<p>Maintainer: <b><a :href="'mailto:' + meta.maintainerEmail" target="_blank">{{ meta.maintainerName }}</a></b></p>
 	<p>Machine: {{ meta.machine }}</p>
 	<p>Node: {{ meta.node }}</p>
+	<p>PSQL: {{ meta.psql }}</p>
+	<p>Redis: {{ meta.redis }}</p>
+	<p>Version: {{ meta.version }} </p>
 </div>
 </template>
 
@@ -21,5 +24,5 @@ export default Vue.extend({
 	> p
 		margin 0
 		font-size 12px
-		color #505050
+		color var(--text)
 </style>

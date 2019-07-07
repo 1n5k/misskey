@@ -1,47 +1,98 @@
 <template>
 <div class="account" v-hotkey.global="keymap">
 	<button class="header" :data-active="isOpen" @click="toggle">
-		<span class="username">{{ $store.state.i.username }}<template v-if="!isOpen">%fa:angle-down%</template><template v-if="isOpen">%fa:angle-up%</template></span>
+		<span class="username">{{ $store.state.i.username }}<template v-if="!isOpen"><fa icon="angle-down"/></template><template v-if="isOpen"><fa icon="angle-up"/></template></span>
 		<mk-avatar class="avatar" :user="$store.state.i"/>
 	</button>
 	<transition name="zoom-in-top">
 		<div class="menu" v-if="isOpen">
 			<ul>
 				<li>
-					<router-link :to="`/@${ $store.state.i.username }`">%fa:user%<span>%i18n:@profile%</span>%fa:angle-right%</router-link>
+					<router-link :to="`/@${ $store.state.i.username }`">
+						<i><fa icon="user" fixed-width/></i>
+						<span>{{ $t('profile') }}</span>
+						<i><fa icon="angle-right"/></i>
+					</router-link>
 				</li>
 				<li @click="drive">
-					<p>%fa:cloud%<span>%i18n:common.drive%</span>%fa:angle-right%</p>
+					<p>
+						<i><fa icon="cloud" fixed-width/></i>
+						<span>{{ $t('@.drive') }}</span>
+						<i><fa icon="angle-right"/></i>
+					</p>
 				</li>
 				<li>
-					<router-link to="/i/favorites">%fa:star%<span>%i18n:@favorites%</span>%fa:angle-right%</router-link>
+					<router-link to="/i/favorites">
+						<i><fa icon="star" fixed-width/></i>
+						<span>{{ $t('@.favorites') }}</span>
+						<i><fa icon="angle-right"/></i>
+					</router-link>
 				</li>
-				<li @click="list">
-					<p>%fa:list%<span>%i18n:@lists%</span>%fa:angle-right%</p>
+				<li>
+					<router-link to="/i/lists">
+						<i><fa icon="list" fixed-width/></i>
+						<span>{{ $t('lists') }}</span>
+						<i><fa icon="angle-right"/></i>
+					</router-link>
 				</li>
-				<li @click="followRequests" v-if="($store.state.i.isLocked || $store.state.i.carefulBot)">
-					<p>%fa:envelope R%<span>%i18n:@follow-requests%<i v-if="$store.state.i.pendingReceivedFollowRequestsCount">{{ $store.state.i.pendingReceivedFollowRequestsCount }}</i></span>%fa:angle-right%</p>
+				<li>
+					<router-link to="/i/groups">
+						<i><fa :icon="faUsers" fixed-width/></i>
+						<span>{{ $t('groups') }}</span>
+						<i><fa icon="angle-right"/></i>
+					</router-link>
+				</li>
+				<li>
+					<router-link to="/i/pages">
+						<i><fa :icon="faStickyNote" fixed-width/></i>
+						<span>{{ $t('@.pages') }}</span>
+						<i><fa icon="angle-right"/></i>
+					</router-link>
+				</li>
+				<li v-if="($store.state.i.isLocked || $store.state.i.carefulBot)">
+					<router-link to="/i/follow-requests">
+						<i><fa :icon="['far', 'envelope']" fixed-width/></i>
+						<span>{{ $t('follow-requests') }}<i v-if="$store.state.i.pendingReceivedFollowRequestsCount">{{ $store.state.i.pendingReceivedFollowRequestsCount }}</i></span>
+						<i><fa icon="angle-right"/></i>
+					</router-link>
 				</li>
 			</ul>
 			<ul>
 				<li>
-					<router-link to="/i/customize-home">%fa:wrench%<span>%i18n:@customize%</span>%fa:angle-right%</router-link>
+					<router-link to="/i/settings">
+						<i><fa icon="cog" fixed-width/></i>
+						<span>{{ $t('@.settings') }}</span>
+						<i><fa icon="angle-right"/></i>
+					</router-link>
 				</li>
-				<li @click="settings">
-					<p>%fa:cog%<span>%i18n:@settings%</span>%fa:angle-right%</p>
-				</li>
-				<li v-if="$store.state.i.isAdmin">
-					<router-link to="/admin">%fa:terminal%<span>%i18n:@admin%</span>%fa:angle-right%</router-link>
+				<li v-if="$store.state.i.isAdmin || $store.state.i.isModerator">
+					<a href="/admin">
+						<i><fa icon="terminal" fixed-width/></i>
+						<span>{{ $t('admin') }}</span>
+						<i><fa icon="angle-right"/></i>
+					</a>
 				</li>
 			</ul>
 			<ul>
+				<li @click="toggleDeckMode">
+					<p>
+						<template v-if="$store.state.device.inDeckMode"><span>{{ $t('@.home') }}</span><i><fa :icon="faHome"/></i></template>
+						<template v-else><span>{{ $t('@.deck') }}</span><i><fa :icon="faColumns"/></i></template>
+					</p>
+				</li>
 				<li @click="dark">
-					<p><span>%i18n:@dark%</span><template v-if="$store.state.device.darkmode">%fa:moon%</template><template v-else>%fa:R moon%</template></p>
+					<p>
+						<span>{{ $store.state.device.darkmode ? $t('@.turn-off-darkmode') : $t('@.turn-on-darkmode') }}</span>
+						<template><i><fa :icon="$store.state.device.darkmode ? faSun : faMoon"/></i></template>
+					</p>
 				</li>
 			</ul>
 			<ul>
 				<li @click="signout">
-					<p class="signout">%fa:power-off%<span>%i18n:@signout%</span></p>
+					<p class="signout">
+						<i><fa icon="power-off" fixed-width/></i>
+						<span>{{ $t('@.signout') }}</span>
+					</p>
 				</li>
 			</ul>
 		</div>
@@ -51,16 +102,19 @@
 
 <script lang="ts">
 import Vue from 'vue';
-import MkUserListsWindow from './user-lists-window.vue';
-import MkFollowRequestsWindow from './received-follow-requests-window.vue';
-import MkSettingsWindow from './settings-window.vue';
+import i18n from '../../../i18n';
+// import MkSettingsWindow from './settings-window.vue';
 import MkDriveWindow from './drive-window.vue';
 import contains from '../../../common/scripts/contains';
+import { faHome, faColumns, faUsers } from '@fortawesome/free-solid-svg-icons';
+import { faMoon, faSun, faStickyNote } from '@fortawesome/free-regular-svg-icons';
 
 export default Vue.extend({
+	i18n: i18n('desktop/views/components/ui.header.account.vue'),
 	data() {
 		return {
-			isOpen: false
+			isOpen: false,
+			faHome, faColumns, faMoon, faSun, faStickyNote, faUsers
 		};
 	},
 	computed: {
@@ -79,15 +133,15 @@ export default Vue.extend({
 		},
 		open() {
 			this.isOpen = true;
-			Array.from(document.querySelectorAll('body *')).forEach(el => {
+			for (const el of Array.from(document.querySelectorAll('body *'))) {
 				el.addEventListener('mousedown', this.onMousedown);
-			});
+			}
 		},
 		close() {
 			this.isOpen = false;
-			Array.from(document.querySelectorAll('body *')).forEach(el => {
+			for (const el of Array.from(document.querySelectorAll('body *'))) {
 				el.removeEventListener('mousedown', this.onMousedown);
-			});
+			}
 		},
 		onMousedown(e) {
 			e.preventDefault();
@@ -96,32 +150,21 @@ export default Vue.extend({
 		},
 		drive() {
 			this.close();
-			(this as any).os.new(MkDriveWindow);
-		},
-		list() {
-			this.close();
-			const w = (this as any).os.new(MkUserListsWindow);
-			w.$once('choosen', list => {
-				this.$router.push(`i/lists/${ list.id }`);
-			});
-		},
-		followRequests() {
-			this.close();
-			(this as any).os.new(MkFollowRequestsWindow);
-		},
-		settings() {
-			this.close();
-			(this as any).os.new(MkSettingsWindow);
+			this.$root.new(MkDriveWindow);
 		},
 		signout() {
-			(this as any).os.signout();
+			this.$root.signout();
 		},
 		dark() {
 			this.$store.commit('device/set', {
 				key: 'darkmode',
 				value: !this.$store.state.device.darkmode
 			});
-		}
+		},
+		toggleDeckMode() {
+			this.$store.commit('device/set', { key: 'deckMode', value: !this.$store.state.device.inDeckMode });
+			location.replace('/');
+		},
 	}
 });
 </script>
@@ -160,7 +203,7 @@ export default Vue.extend({
 			@media (max-width 1100px)
 				display none
 
-			[data-fa]
+			[data-icon]
 				margin-left 8px
 
 		> .avatar
@@ -187,7 +230,7 @@ export default Vue.extend({
 		font-size 0.8em
 		background $bgcolor
 		border-radius 4px
-		box-shadow 0 1px 4px rgba(#000, 0.25)
+		box-shadow 0 var(--lineWidth) 4px rgba(#000, 0.25)
 
 		&:before
 			content ""
@@ -221,7 +264,7 @@ export default Vue.extend({
 
 			& + ul
 				padding-top 10px
-				border-top solid 1px var(--faceDivider)
+				border-top solid var(--lineWidth) var(--faceDivider)
 
 			> li
 				display block
@@ -254,11 +297,11 @@ export default Vue.extend({
 							color var(--primaryForeground)
 							border-radius 8px
 
-					> [data-fa]:first-child
+					> i:first-child
 						margin-right 6px
 						width 16px
 
-					> [data-fa]:last-child
+					> i:last-child
 						display block
 						position absolute
 						top 0

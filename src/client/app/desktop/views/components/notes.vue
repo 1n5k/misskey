@@ -1,10 +1,12 @@
 <template>
-<div class="mk-notes">
+<div class="mk-notes" :class="{ shadow: $store.state.device.useShadow, round: $store.state.device.roundedCorners }">
+	<slot name="header"></slot>
+
 	<div class="newer-indicator" :style="{ top: $store.state.uiHeaderHeight + 'px' }" v-show="queue.length > 0"></div>
 
-	<slot name="empty" v-if="notes.length == 0 && !fetching && requestInitPromise == null"></slot>
+	<div class="empty" v-if="empty">{{ $t('@.no-notes') }}</div>
 
-	<mk-error v-if="!fetching && requestInitPromise != null" @retry="resolveInitPromise"/>
+	<mk-error v-if="error" @retry="init()"/>
 
 	<div class="placeholder" v-if="fetching">
 		<template v-for="i in 10">
@@ -15,18 +17,18 @@
 	<!-- トランジションを有効にするとなぜかメモリリークする -->
 	<component :is="!$store.state.device.reduceMotion ? 'transition-group' : 'div'" name="mk-notes" class="notes transition" tag="div" ref="notes">
 		<template v-for="(note, i) in _notes">
-			<x-note :note="note" :key="note.id" @update:note="onNoteUpdated(i, $event)" ref="note"/>
-			<p class="date" :key="note.id + '_date'" v-if="i != notes.length - 1 && note._date != _notes[i + 1]._date">
-				<span>%fa:angle-up%{{ note._datetext }}</span>
-				<span>%fa:angle-down%{{ _notes[i + 1]._datetext }}</span>
+			<mk-note :note="note" :key="note.id" :compact="true" ref="note"/>
+			<p class="date" :key="note.id + '_date'" v-if="i != items.length - 1 && note._date != _notes[i + 1]._date">
+				<span><fa icon="angle-up"/>{{ note._datetext }}</span>
+				<span><fa icon="angle-down"/>{{ _notes[i + 1]._datetext }}</span>
 			</p>
 		</template>
 	</component>
 
 	<footer v-if="more">
-		<button @click="loadMore" :disabled="moreFetching" :style="{ cursor: moreFetching ? 'wait' : 'pointer' }">
-			<template v-if="!moreFetching">%i18n:@load-more%</template>
-			<template v-if="moreFetching">%fa:spinner .pulse .fw%</template>
+		<button @click="fetchMore()" :disabled="moreFetching" :style="{ cursor: moreFetching ? 'wait' : 'pointer' }">
+			<template v-if="!moreFetching">{{ $t('@.load-more') }}</template>
+			<template v-if="moreFetching"><fa icon="spinner" pulse fixed-width/></template>
 		</button>
 	</footer>
 </div>
@@ -34,175 +36,88 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import * as config from '../../../config';
-
-import XNote from './note.vue';
-
-const displayLimit = 30;
+import shouldMuteNote from '../../../common/scripts/should-mute-note';
+import paging from '../../../common/scripts/paging';
 
 export default Vue.extend({
-	components: {
-		XNote
-	},
+	i18n: i18n(),
+
+	mixins: [
+		paging({
+			captureWindowScroll: true,
+
+			onQueueChanged: (self, x) => {
+				if (x.length > 0) {
+					self.$store.commit('indicate', true);
+				} else {
+					self.$store.commit('indicate', false);
+				}
+			},
+
+			onPrepend: (self, note, silent) => {
+				// 弾く
+				if (shouldMuteNote(self.$store.state.i, self.$store.state.settings, note)) return false;
+
+				// タブが非表示またはスクロール位置が最上部ではないならタイトルで通知
+				if (document.hidden || !self.isScrollTop()) {
+					self.$store.commit('pushBehindNote', note);
+				}
+
+				if (self.isScrollTop()) {
+					// サウンドを再生する
+					if (self.$store.state.device.enableSounds && !silent) {
+						const sound = new Audio(`${config.url}/assets/post.mp3`);
+						sound.volume = self.$store.state.device.soundVolume;
+						sound.play();
+					}
+				}
+			},
+
+			onInited: (self) => {
+				self.$emit('loaded');
+			}
+		}),
+	],
 
 	props: {
-		more: {
-			type: Function,
-			required: false
-		}
-	},
-
-	data() {
-		return {
-			requestInitPromise: null as () => Promise<any[]>,
-			notes: [],
-			queue: [],
-			fetching: true,
-			moreFetching: false
-		};
+		pagination: {
+			required: true
+		},
 	},
 
 	computed: {
 		_notes(): any[] {
-			return (this.notes as any).map(note => {
-				const date = new Date(note.createdAt).getDate();
-				const month = new Date(note.createdAt).getMonth() + 1;
-				note._date = date;
-				note._datetext = '%i18n:common.month-and-day%'.replace('{month}', month.toString()).replace('{day}', date.toString());
-				return note;
+			return (this.items as any).map(item => {
+				const date = new Date(item.createdAt).getDate();
+				const month = new Date(item.createdAt).getMonth() + 1;
+				item._date = date;
+				item._datetext = this.$t('@.month-and-day').replace('{month}', month.toString()).replace('{day}', date.toString());
+				return item;
 			});
 		}
-	},
-
-	mounted() {
-		window.addEventListener('scroll', this.onScroll, { passive: true });
-	},
-
-	beforeDestroy() {
-		window.removeEventListener('scroll', this.onScroll);
 	},
 
 	methods: {
-		isScrollTop() {
-			return window.scrollY <= 8;
-		},
-
 		focus() {
 			(this.$refs.notes as any).children[0].focus ? (this.$refs.notes as any).children[0].focus() : (this.$refs.notes as any).$el.children[0].focus();
 		},
-
-		onNoteUpdated(i, note) {
-			Vue.set((this as any).notes, i, note);
-		},
-
-		init(promiseGenerator: () => Promise<any[]>) {
-			this.requestInitPromise = promiseGenerator;
-			this.resolveInitPromise();
-		},
-
-		resolveInitPromise() {
-			this.queue = [];
-			this.notes = [];
-			this.fetching = true;
-
-			const promise = this.requestInitPromise();
-
-			promise.then(notes => {
-				this.notes = notes;
-				this.requestInitPromise = null;
-				this.fetching = false;
-			}, e => {
-				this.fetching = false;
-			});
-		},
-
-		prepend(note, silent = false) {
-			//#region 弾く
-			const isMyNote = note.userId == this.$store.state.i.id;
-			const isPureRenote = note.renoteId != null && note.text == null && note.fileIds.length == 0 && note.poll == null;
-
-			if (this.$store.state.settings.showMyRenotes === false) {
-				if (isMyNote && isPureRenote) {
-					return;
-				}
-			}
-
-			if (this.$store.state.settings.showRenotedMyNotes === false) {
-				if (isPureRenote && (note.renote.userId == this.$store.state.i.id)) {
-					return;
-				}
-			}
-
-			if (this.$store.state.settings.showLocalRenotes === false) {
-				if (isPureRenote && (note.renote.user.host == null)) {
-					return;
-				}
-			}
-			//#endregion
-
-			// タブが非表示またはスクロール位置が最上部ではないならタイトルで通知
-			if (document.hidden || !this.isScrollTop()) {
-				this.$store.commit('pushBehindNote', note);
-			}
-
-			if (this.isScrollTop()) {
-				// Prepend the note
-				this.notes.unshift(note);
-
-				// サウンドを再生する
-				if (this.$store.state.device.enableSounds && !silent) {
-					const sound = new Audio(`${config.url}/assets/post.mp3`);
-					sound.volume = this.$store.state.device.soundVolume;
-					sound.play();
-				}
-
-				// オーバーフローしたら古い投稿は捨てる
-				if (this.notes.length >= displayLimit) {
-					this.notes = this.notes.slice(0, displayLimit);
-				}
-			} else {
-				this.queue.push(note);
-			}
-		},
-
-		append(note) {
-			this.notes.push(note);
-		},
-
-		tail() {
-			return this.notes[this.notes.length - 1];
-		},
-
-		releaseQueue() {
-			this.queue.forEach(n => this.prepend(n, true));
-			this.queue = [];
-		},
-
-		async loadMore() {
-			if (this.more == null) return;
-			if (this.moreFetching) return;
-
-			this.moreFetching = true;
-			await this.more();
-			this.moreFetching = false;
-		},
-
-		onScroll() {
-			if (this.isScrollTop()) {
-				this.releaseQueue();
-			}
-
-			if (this.$store.state.settings.fetchOnScroll !== false) {
-				const current = window.scrollY + window.innerHeight;
-				if (current > document.body.offsetHeight - 8) this.loadMore();
-			}
-		}
 	}
 });
 </script>
 
 <style lang="stylus" scoped>
 .mk-notes
+	background var(--face)
+	overflow hidden
+
+	&.round
+		border-radius 6px
+
+	&.shadow
+		box-shadow 0 3px 8px rgba(0, 0, 0, 0.2)
+
 	.transition
 		.mk-notes-enter
 		.mk-notes-leave-to
@@ -211,6 +126,11 @@ export default Vue.extend({
 
 		> *
 			transition transform .3s ease, opacity .3s ease
+
+	> .empty
+		padding 16px
+		text-align center
+		color var(--text)
 
 	> .placeholder
 		padding 32px
@@ -225,12 +145,12 @@ export default Vue.extend({
 			text-align center
 			color var(--dateDividerFg)
 			background var(--dateDividerBg)
-			border-bottom solid 1px var(--faceDivider)
+			border-bottom solid var(--lineWidth) var(--faceDivider)
 
 			span
 				margin 0 16px
 
-			[data-fa]
+			[data-icon]
 				margin-right 8px
 
 	> .newer-indicator
@@ -249,7 +169,7 @@ export default Vue.extend({
 			text-align center
 			color #ccc
 			background var(--face)
-			border-top solid 1px var(--faceDivider)
+			border-top solid var(--lineWidth) var(--faceDivider)
 			border-bottom-left-radius 6px
 			border-bottom-right-radius 6px
 

@@ -1,26 +1,31 @@
 import * as Koa from 'koa';
 import * as bcrypt from 'bcryptjs';
-import { generate as generateKeypair } from '../../../crypto_key';
-const recaptcha = require('recaptcha-promise');
-import User, { IUser, validateUsername, validatePassword, pack } from '../../../models/user';
+import { generateKeyPair } from 'crypto';
 import generateUserToken from '../common/generate-native-user-token';
 import config from '../../../config';
-import Meta from '../../../models/meta';
-import RegistrationTicket from '../../../models/registration-tickets';
-import usersChart from '../../../chart/users';
+import { fetchMeta } from '../../../misc/fetch-meta';
+import * as recaptcha from 'recaptcha-promise';
+import { Users, RegistrationTickets } from '../../../models';
+import { genId } from '../../../misc/gen-id';
+import { usersChart } from '../../../services/chart';
+import { User } from '../../../models/entities/user';
+import { UserKeypair } from '../../../models/entities/user-keypair';
+import { toPunyNullable } from '../../../misc/convert-host';
+import { UserProfile } from '../../../models/entities/user-profile';
+import { getConnection } from 'typeorm';
 
-if (config.recaptcha) {
-	recaptcha.init({
-		secret_key: config.recaptcha.secret_key
-	});
-}
-
-export default async (ctx: Koa.Context) => {
+export default async (ctx: Koa.BaseContext) => {
 	const body = ctx.request.body as any;
+
+	const instance = await fetchMeta(true);
 
 	// Verify recaptcha
 	// ただしテスト時はこの機構は障害となるため無効にする
-	if (process.env.NODE_ENV !== 'test' && config.recaptcha != null) {
+	if (process.env.NODE_ENV !== 'test' && instance.enableRecaptcha && instance.recaptchaSecretKey) {
+		recaptcha.init({
+			secret_key: instance.recaptchaSecretKey
+		});
+
 		const success = await recaptcha(body['g-recaptcha-response']);
 
 		if (!success) {
@@ -31,17 +36,16 @@ export default async (ctx: Koa.Context) => {
 
 	const username = body['username'];
 	const password = body['password'];
+	const host: string | null = process.env.NODE_ENV === 'test' ? (body['host'] || null) : null;
 	const invitationCode = body['invitationCode'];
 
-	const meta = await Meta.findOne({});
-
-	if (meta && meta.disableRegistration) {
+	if (instance && instance.disableRegistration) {
 		if (invitationCode == null || typeof invitationCode != 'string') {
 			ctx.status = 400;
 			return;
 		}
 
-		const ticket = await RegistrationTicket.findOne({
+		const ticket = await RegistrationTickets.findOne({
 			code: invitationCode
 		});
 
@@ -50,37 +54,22 @@ export default async (ctx: Koa.Context) => {
 			return;
 		}
 
-		RegistrationTicket.remove({
-			_id: ticket._id
-		});
+		RegistrationTickets.delete(ticket.id);
 	}
 
 	// Validate username
-	if (!validateUsername(username)) {
+	if (!Users.validateLocalUsername.ok(username)) {
 		ctx.status = 400;
 		return;
 	}
 
 	// Validate password
-	if (!validatePassword(password)) {
+	if (!Users.validatePassword.ok(password)) {
 		ctx.status = 400;
 		return;
 	}
 
-	// Fetch exist user that same username
-	const usernameExist = await User
-		.count({
-			usernameLower: username.toLowerCase(),
-			host: null
-		}, {
-				limit: 1
-			});
-
-	// Check username already used
-	if (usernameExist !== 0) {
-		ctx.status = 400;
-		return;
-	}
+	const usersCount = await Users.count({});
 
 	// Generate hash of password
 	const salt = await bcrypt.genSalt(8);
@@ -89,55 +78,64 @@ export default async (ctx: Koa.Context) => {
 	// Generate secret
 	const secret = generateUserToken();
 
-	// Create account
-	const account: IUser = await User.insert({
-		avatarId: null,
-		bannerId: null,
-		createdAt: new Date(),
-		description: null,
-		followersCount: 0,
-		followingCount: 0,
-		name: null,
-		notesCount: 0,
-		username: username,
-		usernameLower: username.toLowerCase(),
-		host: null,
-		keypair: generateKeypair(),
-		token: secret,
-		email: null,
-		password: hash,
-		profile: {
-			bio: null,
-			birthday: null,
-			blood: null,
-			gender: null,
-			handedness: null,
-			height: null,
-			location: null,
-			weight: null
-		},
-		settings: {
-			autoWatch: false
-		}
-	});
+	if (await Users.findOne({ usernameLower: username.toLowerCase(), host: null })) {
+		ctx.status = 400;
+		return;
+	}
 
-	//#region Increment users count
-	Meta.update({}, {
-		$inc: {
-			'stats.usersCount': 1,
-			'stats.originalUsersCount': 1
-		}
-	}, { upsert: true });
-	//#endregion
+	const keyPair = await new Promise<string[]>((s, j) =>
+		generateKeyPair('rsa', {
+			modulusLength: 4096,
+			publicKeyEncoding: {
+				type: 'pkcs1',
+				format: 'pem'
+			},
+			privateKeyEncoding: {
+				type: 'pkcs1',
+				format: 'pem',
+				cipher: undefined,
+				passphrase: undefined
+			}
+		} as any, (e, publicKey, privateKey) =>
+			e ? j(e) : s([publicKey, privateKey])
+		));
+
+	let account!: User;
+
+	// Start transaction
+	await getConnection().transaction(async transactionalEntityManager => {
+		account = await transactionalEntityManager.save(new User({
+			id: genId(),
+			createdAt: new Date(),
+			username: username,
+			usernameLower: username.toLowerCase(),
+			host: toPunyNullable(host),
+			token: secret,
+			isAdmin: config.autoAdmin && usersCount === 0,
+		}));
+
+		await transactionalEntityManager.save(new UserKeypair({
+			publicKey: keyPair[0],
+			privateKey: keyPair[1],
+			userId: account.id
+		}));
+
+		await transactionalEntityManager.save(new UserProfile({
+			userId: account.id,
+			autoAcceptFollowed: true,
+			autoWatch: false,
+			password: hash,
+		}));
+	});
 
 	usersChart.update(account, true);
 
-	const res = await pack(account, account, {
+	const res = await Users.pack(account, account, {
 		detail: true,
 		includeSecrets: true
 	});
 
-	res.token = secret;
+	(res as any).token = secret;
 
 	ctx.body = res;
 };

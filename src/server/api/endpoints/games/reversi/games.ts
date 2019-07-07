@@ -1,66 +1,49 @@
-import $ from 'cafy'; import ID from '../../../../../misc/cafy-id';
-import ReversiGame, { pack } from '../../../../../models/games/reversi/game';
-import { ILocalUser } from '../../../../../models/user';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
+import define from '../../../define';
+import { ReversiGames } from '../../../../../models';
+import { makePaginationQuery } from '../../../common/make-pagination-query';
+import { Brackets } from 'typeorm';
 
 export const meta = {
+	tags: ['games'],
+
+	params: {
+		limit: {
+			validator: $.optional.num.range(1, 100),
+			default: 10
+		},
+
+		sinceId: {
+			validator: $.optional.type(ID),
+		},
+
+		untilId: {
+			validator: $.optional.type(ID),
+		},
+
+		my: {
+			validator: $.optional.bool,
+			default: false
+		}
+	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'my' parameter
-	const [my = false, myErr] = $.bool.optional.get(params.my);
-	if (myErr) return rej('invalid my param');
+export default define(meta, async (ps, user) => {
+	const query = makePaginationQuery(ReversiGames.createQueryBuilder('game'), ps.sinceId, ps.untilId)
+		.andWhere('game.isStarted = TRUE');
 
-	// Get 'limit' parameter
-	const [limit = 10, limitErr] = $.num.optional.range(1, 100).get(params.limit);
-	if (limitErr) return rej('invalid limit param');
-
-	// Get 'sinceId' parameter
-	const [sinceId, sinceIdErr] = $.type(ID).optional.get(params.sinceId);
-	if (sinceIdErr) return rej('invalid sinceId param');
-
-	// Get 'untilId' parameter
-	const [untilId, untilIdErr] = $.type(ID).optional.get(params.untilId);
-	if (untilIdErr) return rej('invalid untilId param');
-
-	// Check if both of sinceId and untilId is specified
-	if (sinceId && untilId) {
-		return rej('cannot set sinceId and untilId');
-	}
-
-	const q: any = my ? {
-		isStarted: true,
-		$or: [{
-			user1Id: user._id
-		}, {
-			user2Id: user._id
-		}]
-	} : {
-		isStarted: true
-	};
-
-	const sort = {
-		_id: -1
-	};
-
-	if (sinceId) {
-		sort._id = 1;
-		q._id = {
-			$gt: sinceId
-		};
-	} else if (untilId) {
-		q._id = {
-			$lt: untilId
-		};
+	if (ps.my) {
+		query.andWhere(new Brackets(qb => { qb
+			.where('game.user1Id = :userId', { userId: user.id })
+			.orWhere('game.user2Id = :userId', { userId: user.id });
+		}));
 	}
 
 	// Fetch games
-	const games = await ReversiGame.find(q, {
-		sort,
-		limit
-	});
+	const games = await query.take(ps.limit!).getMany();
 
-	// Reponse
-	res(Promise.all(games.map(async (g) => await pack(g, user, {
+	return await Promise.all(games.map((g) => ReversiGames.pack(g, user, {
 		detail: false
-	}))));
+	})));
 });

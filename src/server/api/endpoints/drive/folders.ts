@@ -1,6 +1,8 @@
-import $ from 'cafy'; import ID from '../../../../misc/cafy-id';
-import DriveFolder, { pack } from '../../../../models/drive-folder';
-import { ILocalUser } from '../../../../models/user';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
+import define from '../../define';
+import { DriveFolders } from '../../../../models';
+import { makePaginationQuery } from '../../common/make-pagination-query';
 
 export const meta = {
 	desc: {
@@ -8,60 +10,54 @@ export const meta = {
 		'en-US': 'Get folders of drive.'
 	},
 
+	tags: ['drive'],
+
 	requireCredential: true,
 
-	kind: 'drive-read'
+	kind: 'read:drive',
+
+	params: {
+		limit: {
+			validator: $.optional.num.range(1, 100),
+			default: 10
+		},
+
+		sinceId: {
+			validator: $.optional.type(ID),
+		},
+
+		untilId: {
+			validator: $.optional.type(ID),
+		},
+
+		folderId: {
+			validator: $.optional.nullable.type(ID),
+			default: null as any,
+		}
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'DriveFolder',
+		}
+	},
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'limit' parameter
-	const [limit = 10, limitErr] = $.num.optional.range(1, 100).get(params.limit);
-	if (limitErr) return rej('invalid limit param');
+export default define(meta, async (ps, user) => {
+	const query = makePaginationQuery(DriveFolders.createQueryBuilder('folder'), ps.sinceId, ps.untilId)
+		.andWhere('folder.userId = :userId', { userId: user.id });
 
-	// Get 'sinceId' parameter
-	const [sinceId, sinceIdErr] = $.type(ID).optional.get(params.sinceId);
-	if (sinceIdErr) return rej('invalid sinceId param');
-
-	// Get 'untilId' parameter
-	const [untilId, untilIdErr] = $.type(ID).optional.get(params.untilId);
-	if (untilIdErr) return rej('invalid untilId param');
-
-	// Check if both of sinceId and untilId is specified
-	if (sinceId && untilId) {
-		return rej('cannot set sinceId and untilId');
+	if (ps.folderId) {
+		query.andWhere('folder.parentId = :parentId', { parentId: ps.folderId });
+	} else {
+		query.andWhere('folder.parentId IS NULL');
 	}
 
-	// Get 'folderId' parameter
-	const [folderId = null, folderIdErr] = $.type(ID).optional.nullable.get(params.folderId);
-	if (folderIdErr) return rej('invalid folderId param');
+	const folders = await query.take(ps.limit!).getMany();
 
-	// Construct query
-	const sort = {
-		_id: -1
-	};
-	const query = {
-		userId: user._id,
-		parentId: folderId
-	} as any;
-	if (sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: sinceId
-		};
-	} else if (untilId) {
-		query._id = {
-			$lt: untilId
-		};
-	}
-
-	// Issue query
-	const folders = await DriveFolder
-		.find(query, {
-			limit: limit,
-			sort: sort
-		});
-
-	// Serialize
-	res(await Promise.all(folders.map(async folder =>
-		await pack(folder))));
+	return await Promise.all(folders.map(folder => DriveFolders.pack(folder)));
 });

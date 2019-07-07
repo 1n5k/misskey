@@ -1,34 +1,70 @@
-import $ from 'cafy'; import ID from '../../../../misc/cafy-id';
-import Note, { packMany } from '../../../../models/note';
-import { ILocalUser } from '../../../../models/user';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
+import define from '../../define';
+import { Notes } from '../../../../models';
+import { makePaginationQuery } from '../../common/make-pagination-query';
+import { generateVisibilityQuery } from '../../common/generate-visibility-query';
+import { generateMuteQuery } from '../../common/generate-mute-query';
 
-/**
- * Get replies of a note
- */
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'noteId' parameter
-	const [noteId, noteIdErr] = $.type(ID).get(params.noteId);
-	if (noteIdErr) return rej('invalid noteId param');
+export const meta = {
+	desc: {
+		'ja-JP': '指定した投稿への返信を取得します。',
+		'en-US': 'Get replies of a note.'
+	},
 
-	// Get 'limit' parameter
-	const [limit = 10, limitErr] = $.num.optional.range(1, 100).get(params.limit);
-	if (limitErr) return rej('invalid limit param');
+	tags: ['notes'],
 
-	// Get 'offset' parameter
-	const [offset = 0, offsetErr] = $.num.optional.min(0).get(params.offset);
-	if (offsetErr) return rej('invalid offset param');
+	requireCredential: false,
 
-	// Lookup note
-	const note = await Note.findOne({
-		_id: noteId
-	});
+	params: {
+		noteId: {
+			validator: $.type(ID),
+			desc: {
+				'ja-JP': '対象の投稿のID',
+				'en-US': 'Target note ID'
+			}
+		},
 
-	if (note === null) {
-		return rej('note not found');
-	}
+		sinceId: {
+			validator: $.optional.type(ID),
+			desc: {
+				'ja-JP': '指定すると、その投稿を基点としてより新しい投稿を取得します'
+			}
+		},
 
-	const ids = (note._replyIds || []).slice(offset, offset + limit);
+		untilId: {
+			validator: $.optional.type(ID),
+			desc: {
+				'ja-JP': '指定すると、その投稿を基点としてより古い投稿を取得します'
+			}
+		},
 
-	// Serialize
-	res(await packMany(ids, user));
+		limit: {
+			validator: $.optional.num.range(1, 100),
+			default: 10
+		},
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'Note',
+		}
+	},
+};
+
+export default define(meta, async (ps, user) => {
+	const query = makePaginationQuery(Notes.createQueryBuilder('note'), ps.sinceId, ps.untilId)
+		.andWhere('note.replyId = :replyId', { replyId: ps.noteId })
+		.leftJoinAndSelect('note.user', 'user');
+
+	if (user) generateVisibilityQuery(query, user);
+	if (user) generateMuteQuery(query, user);
+
+	const timeline = await query.take(ps.limit!).getMany();
+
+	return await Notes.packMany(timeline, user);
 });

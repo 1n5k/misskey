@@ -1,8 +1,7 @@
-FROM alpine:3.8 AS base
+FROM node:12.6-alpine AS base
 
 ENV NODE_ENV=production
 
-RUN apk add --no-cache nodejs nodejs-npm zlib
 RUN npm i -g npm@latest
 
 WORKDIR /misskey
@@ -10,35 +9,34 @@ WORKDIR /misskey
 FROM base AS builder
 
 RUN apk add --no-cache \
-    gcc \
-    g++ \
-    libc-dev \
-    python \
     autoconf \
     automake \
     file \
+    g++ \
+    gcc \
+    libc-dev \
+    libtool \
     make \
     nasm \
     pkgconfig \
-    libtool \
+    python \
     zlib-dev
-RUN npm i -g node-gyp
 
-COPY ./package.json ./
+COPY package.json ./
 RUN npm i
-
 COPY . ./
-RUN node-gyp configure \
- && node-gyp build \
- && npm run build
+RUN npm run build
 
 FROM base AS runner
 
-RUN apk add --no-cache tini
+RUN apk add --no-cache \
+    ffmpeg \
+    tini
+RUN npm i -g web-push
 ENTRYPOINT ["/sbin/tini", "--"]
 
 COPY --from=builder /misskey/node_modules ./node_modules
 COPY --from=builder /misskey/built ./built
 COPY . ./
 
-CMD ["npm", "start"]
+CMD ["npm", "run", "migrateandstart"]

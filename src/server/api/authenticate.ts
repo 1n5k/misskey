@@ -1,39 +1,40 @@
-import App, { IApp } from '../../models/app';
-import { default as User, IUser } from '../../models/user';
-import AccessToken from '../../models/access-token';
 import isNativeToken from './common/is-native-token';
+import { User } from '../../models/entities/user';
+import { App } from '../../models/entities/app';
+import { Users, AccessTokens, Apps } from '../../models';
 
-export default (token: string) => new Promise<[IUser, IApp]>(async (resolve, reject) => {
+export default async (token: string): Promise<[User | null | undefined, App | null | undefined]> => {
 	if (token == null) {
-		resolve([null, null]);
-		return;
+		return [null, null];
 	}
 
 	if (isNativeToken(token)) {
 		// Fetch user
-		const user: IUser = await User
+		const user = await Users
 			.findOne({ token });
 
-		if (user === null) {
-			return reject('user not found');
+		if (user == null) {
+			throw new Error('user not found');
 		}
 
-		resolve([user, null]);
+		return [user, null];
 	} else {
-		const accessToken = await AccessToken.findOne({
+		const accessToken = await AccessTokens.findOne({
 			hash: token.toLowerCase()
 		});
 
-		if (accessToken === null) {
-			return reject('invalid signature');
+		if (accessToken == null) {
+			throw new Error('invalid signature');
 		}
 
-		const app = await App
-			.findOne({ _id: accessToken.appId });
+		const app = await Apps
+			.findOne(accessToken.appId);
 
-		const user = await User
-			.findOne({ _id: accessToken.userId });
+		const user = await Users
+			.findOne({
+				id: accessToken.userId // findOne(accessToken.userId) のように書かないのは後方互換性のため
+			});
 
-		resolve([user, app]);
+		return [user, app];
 	}
-});
+};

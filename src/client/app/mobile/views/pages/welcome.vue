@@ -3,15 +3,15 @@
 	<div class="banner" :style="{ backgroundImage: banner ? `url(${banner})` : null }"></div>
 
 	<div>
-		<img svg-inline src="../../../../assets/title.svg" :alt="name">
+		<img svg-inline src="../../../../assets/title.svg" alt="Misskey">
 		<p class="host">{{ host }}</p>
 		<div class="about">
-			<h2>{{ name }}</h2>
-			<p v-html="description || '%i18n:common.about%'"></p>
-			<router-link class="signup" to="/signup">%i18n:@signup%</router-link>
+			<h2>{{ name || 'Misskey' }}</h2>
+			<p v-html="description || this.$t('@.about')"></p>
+			<router-link class="signup" to="/signup">{{ $t('@.signup') }}</router-link>
 		</div>
-		<div class="login">
-			<mk-signin :with-avatar="false"/>
+		<div class="signin">
+			<a href="/signin" @click.prevent="signin()">{{ $t('@.signin') }}</a>
 		</div>
 		<div class="tl">
 			<mk-welcome-timeline/>
@@ -23,46 +23,47 @@
 			<div v-for="photo in photos" :style="`background-image: url(${photo.thumbnailUrl})`"></div>
 		</div>
 		<div class="stats" v-if="stats">
-			<span>%fa:user% {{ stats.originalUsersCount | number }}</span>
-			<span>%fa:pencil-alt% {{ stats.originalNotesCount | number }}</span>
+			<span><fa icon="user"/> {{ stats.originalUsersCount | number }}</span>
+			<span><fa icon="pencil-alt"/> {{ stats.originalNotesCount | number }}</span>
 		</div>
 		<div class="announcements" v-if="announcements && announcements.length > 0">
 			<article v-for="announcement in announcements">
 				<span class="title" v-html="announcement.title"></span>
-				<div v-html="announcement.text"></div>
+				<mfm :text="announcement.text"/>
+				<img v-if="announcement.image" :src="announcement.image" alt="" style="display: block; max-height: 120px; max-width: 100%;"/>
 			</article>
 		</div>
 		<article class="about-misskey">
-			<h1>%i18n:common.intro.title%</h1>
-			<p v-html="'%i18n:common.intro.about%'"></p>
+			<h1>{{ $t('@.intro.title') }}</h1>
+			<p v-html="this.$t('@.intro.about')"></p>
 			<section>
-				<h2>%i18n:common.intro.features%</h2>
+				<h2>{{ $t('@.intro.features') }}</h2>
 				<section>
-					<h3>%i18n:common.intro.rich-contents%</h3>
+					<h3>{{ $t('@.intro.rich-contents') }}</h3>
 					<div class="image"><img src="/assets/about/post.png" alt=""></div>
-					<p v-html="'%i18n:common.intro.rich-contents-desc%'"></p>
+					<p v-html="this.$t('@.intro.rich-contents-desc')"></p>
 				</section>
 				<section>
-					<h3>%i18n:common.intro.reaction%</h3>
+					<h3>{{ $t('@.intro.reaction') }}</h3>
 					<div class="image"><img src="/assets/about/reaction.png" alt=""></div>
-					<p v-html="'%i18n:common.intro.reaction-desc%'"></p>
+					<p v-html="this.$t('@.intro.reaction-desc')"></p>
 				</section>
 				<section>
-					<h3>%i18n:common.intro.ui%</h3>
+					<h3>{{ $t('@.intro.ui') }}</h3>
 					<div class="image"><img src="/assets/about/ui.png" alt=""></div>
-					<p v-html="'%i18n:common.intro.ui-desc%'"></p>
+					<p v-html="this.$t('@.intro.ui-desc')"></p>
 				</section>
 				<section>
-					<h3>%i18n:common.intro.drive%</h3>
+					<h3>{{ $t('@.intro.drive') }}</h3>
 					<div class="image"><img src="/assets/about/drive.png" alt=""></div>
-					<p v-html="'%i18n:common.intro.drive-desc%'"></p>
+					<p v-html="this.$t('@.intro.drive-desc')"></p>
 				</section>
 			</section>
-			<p v-html="'%i18n:common.intro.outro%'"></p>
+			<p v-html="this.$t('@.intro.outro')"></p>
 		</article>
 		<div class="info" v-if="meta">
 			<p>Version: <b>{{ meta.version }}</b></p>
-			<p>Maintainer: <b><a :href="meta.maintainer.url" target="_blank">{{ meta.maintainer.name }}</a></b></p>
+			<p>Maintainer: <b><a :href="'mailto:' + meta.maintainerEmail" target="_blank">{{ meta.maintainerName }}</a></b></p>
 		</div>
 		<footer>
 			<small>{{ copyright }}</small>
@@ -73,43 +74,48 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import { copyright, host } from '../../../config';
 import { concat } from '../../../../../prelude/array';
+import { toUnicode } from 'punycode';
 
 export default Vue.extend({
+	i18n: i18n('mobile/views/pages/welcome.vue'),
 	data() {
 		return {
 			meta: null,
 			copyright,
 			stats: null,
 			banner: null,
-			host,
-			name: 'Misskey',
+			host: toUnicode(host),
+			name: null,
 			description: '',
 			photos: [],
 			announcements: []
 		};
 	},
 	created() {
-		(this as any).os.getMeta().then(meta => {
+		this.$root.getMeta().then(meta => {
 			this.meta = meta;
 			this.name = meta.name;
 			this.description = meta.description;
-			this.announcements = meta.broadcasts;
+			this.announcements = meta.announcements;
 			this.banner = meta.bannerUrl;
 		});
 
-		(this as any).api('stats').then(stats => {
+		this.$root.api('stats').then(stats => {
 			this.stats = stats;
 		});
 
 		const image = [
 			'image/jpeg',
 			'image/png',
-			'image/gif'
+			'image/gif',
+			'image/apng',
+			'image/vnd.mozilla.apng',
 		];
 
-		(this as any).api('notes/local-timeline', {
+		this.$root.api('notes/local-timeline', {
 			fileType: image,
 			excludeNsfw: true,
 			limit: 6
@@ -117,6 +123,13 @@ export default Vue.extend({
 			const files = concat(notes.map((n: any): any[] => n.files));
 			this.photos = files.filter(f => image.includes(f.type)).slice(0, 6);
 		});
+	},
+	methods: {
+		signin() {
+			this.$root.dialog({
+				type: 'signin'
+			});
+		}
 	}
 });
 </script>
@@ -182,31 +195,8 @@ export default Vue.extend({
 			> .signup
 				font-weight bold
 
-		> .login
+		> .signin
 			margin 16px 0
-
-			> form
-
-				button
-					display block
-					width 100%
-					padding 10px
-					margin 0
-					color #333
-					font-size 1em
-					text-align center
-					text-decoration none
-					text-shadow 0 1px 0 rgba(255, 255, 255, 0.9)
-					background-image linear-gradient(#fafafa, #eaeaea)
-					border 1px solid #ddd
-					border-bottom-color #cecece
-					border-radius 4px
-
-					&:active
-						background-color #767676
-						background-image none
-						border-color #444
-						box-shadow 0 1px 3px rgba(#000, 0.075), inset 0 0 5px rgba(#000, 0.2)
 
 		> .tl
 			margin 16px 0
@@ -303,6 +293,7 @@ export default Vue.extend({
 			padding 16px 0
 			border solid 2px rgba(0, 0, 0, 0.1)
 			border-radius 8px
+			color var(--text)
 
 			> *
 				margin 0 16px

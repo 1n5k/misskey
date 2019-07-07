@@ -1,25 +1,46 @@
 <template>
-<span class="mk-reaction-icon">
-	<img v-if="reaction == 'like'" src="https://twemoji.maxcdn.com/2/svg/1f44d.svg" alt="%i18n:common.reactions.like%">
-	<img v-if="reaction == 'love'" src="https://twemoji.maxcdn.com/2/svg/2764.svg" alt="%i18n:common.reactions.love%">
-	<img v-if="reaction == 'laugh'" src="https://twemoji.maxcdn.com/2/svg/1f606.svg" alt="%i18n:common.reactions.laugh%">
-	<img v-if="reaction == 'hmm'" src="https://twemoji.maxcdn.com/2/svg/1f914.svg" alt="%i18n:common.reactions.hmm%">
-	<img v-if="reaction == 'surprise'" src="https://twemoji.maxcdn.com/2/svg/1f62e.svg" alt="%i18n:common.reactions.surprise%">
-	<img v-if="reaction == 'congrats'" src="https://twemoji.maxcdn.com/2/svg/1f389.svg" alt="%i18n:common.reactions.congrats%">
-	<img v-if="reaction == 'angry'" src="https://twemoji.maxcdn.com/2/svg/1f4a2.svg" alt="%i18n:common.reactions.angry%">
-	<img v-if="reaction == 'confused'" src="https://twemoji.maxcdn.com/2/svg/1f625.svg" alt="%i18n:common.reactions.confused%">
-	<img v-if="reaction == 'rip'" src="https://twemoji.maxcdn.com/2/svg/1f607.svg" alt="%i18n:common.reactions.rip%">
-	<template v-if="reaction == 'pudding'">
-		<img v-if="$store.getters.isSignedIn && $store.state.settings.iLikeSushi" src="https://twemoji.maxcdn.com/2/svg/1f363.svg" alt="%i18n:common.reactions.pudding%">
-		<img v-else src="https://twemoji.maxcdn.com/2/svg/1f36e.svg" alt="%i18n:common.reactions.pudding%">
-	</template>
-</span>
+<mk-emoji :emoji="str.startsWith(':') ? null : str" :name="str.startsWith(':') ? str.substr(1, str.length - 2) : null" :is-reaction="true" :custom-emojis="customEmojis" :normal="true"/>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 export default Vue.extend({
-	props: ['reaction']
+	i18n: i18n(),
+	props: {
+		reaction: {
+			type: String,
+			required: true
+		},
+	},
+	data() {
+		return {
+			customEmojis: []
+		};
+	},
+	created() {
+		this.$root.getMeta().then(meta => {
+			if (meta && meta.emojis) this.customEmojis = meta.emojis;
+		});
+	},
+	computed: {
+		str(): any {
+			switch (this.reaction) {
+				case 'like': return '👍';
+				case 'love': return '❤';
+				case 'laugh': return '😆';
+				case 'hmm': return '🤔';
+				case 'surprise': return '😮';
+				case 'congrats': return '🎉';
+				case 'angry': return '💢';
+				case 'confused': return '😥';
+				case 'rip': return '😇';
+				case 'pudding': return (this.$store.getters.isSignedIn && this.$store.state.settings.iLikeSushi) ? '🍣' : '🍮';
+				case 'star': return '⭐';
+				default: return this.reaction;
+			}
+		},
+	},
 });
 </script>
 

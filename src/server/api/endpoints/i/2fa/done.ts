@@ -1,39 +1,42 @@
 import $ from 'cafy';
 import * as speakeasy from 'speakeasy';
-import User, { ILocalUser } from '../../../../../models/user';
+import define from '../../../define';
+import { UserProfiles } from '../../../../../models';
+import { ensure } from '../../../../../prelude/ensure';
 
 export const meta = {
 	requireCredential: true,
-	secure: true
+
+	secure: true,
+
+	params: {
+		token: {
+			validator: $.str
+		}
+	}
 };
 
-export default async (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	// Get 'token' parameter
-	const [token, tokenErr] = $.str.get(params.token);
-	if (tokenErr) return rej('invalid token param');
+export default define(meta, async (ps, user) => {
+	const token = ps.token.replace(/\s/g, '');
 
-	const _token = token.replace(/\s/g, '');
+	const profile = await UserProfiles.findOne(user.id).then(ensure);
 
-	if (user.twoFactorTempSecret == null) {
-		return rej('二段階認証の設定が開始されていません');
+	if (profile.twoFactorTempSecret == null) {
+		throw new Error('二段階認証の設定が開始されていません');
 	}
 
 	const verified = (speakeasy as any).totp.verify({
-		secret: user.twoFactorTempSecret,
+		secret: profile.twoFactorTempSecret,
 		encoding: 'base32',
-		token: _token
+		token: token
 	});
 
 	if (!verified) {
-		return rej('not verified');
+		throw new Error('not verified');
 	}
 
-	await User.update(user._id, {
-		$set: {
-			'twoFactorSecret': user.twoFactorTempSecret,
-			'twoFactorEnabled': true
-		}
+	await UserProfiles.update({ userId: user.id }, {
+		twoFactorSecret: profile.twoFactorTempSecret,
+		twoFactorEnabled: true
 	});
-
-	res();
 });

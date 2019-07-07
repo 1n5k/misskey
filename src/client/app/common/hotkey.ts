@@ -28,15 +28,15 @@ const getKeyMap = keymap => Object.entries(keymap).map(([patterns, callback]): a
 			shift: false
 		} as pattern;
 
-		part.trim().split('+').forEach(key => {
-			key = key.trim().toLowerCase();
+		const keys = part.trim().split('+').map(x => x.trim().toLowerCase());
+		for (const key of keys) {
 			switch (key) {
 				case 'ctrl': pattern.ctrl = true; break;
 				case 'alt': pattern.alt = true; break;
 				case 'shift': pattern.shift = true; break;
 				default: pattern.which = keyCode(key).map(k => k.toLowerCase());
 			}
-		});
+		}
 
 		return pattern;
 	});
@@ -52,7 +52,7 @@ function match(e: KeyboardEvent, patterns: action['patterns']): boolean {
 		pattern.ctrl == e.ctrlKey &&
 		pattern.shift == e.shiftKey &&
 		pattern.alt == e.altKey &&
-		e.metaKey == false
+		!e.metaKey
 	);
 }
 
@@ -77,11 +77,7 @@ export default {
 						const matched = match(e, action.patterns);
 
 						if (matched) {
-							if (el._hotkey_global) {
-								if (match(e, targetReservedKeys)) {
-									return;
-								}
-							}
+							if (el._hotkey_global && match(e, targetReservedKeys)) return;
 
 							e.preventDefault();
 							e.stopPropagation();

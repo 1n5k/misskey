@@ -1,133 +1,179 @@
 <template>
 <div style="position:initial">
-	<mk-menu :source="source" :compact="compact" :items="items" @closed="closed"/>
+	<mk-menu :source="source" :items="items" @closed="closed"/>
 </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 import { url } from '../../../config';
 import copyToClipboard from '../../../common/scripts/copy-to-clipboard';
-import Ok from './ok.vue';
+import { faCopy, faEye, faEyeSlash } from '@fortawesome/free-regular-svg-icons';
 
 export default Vue.extend({
-	props: ['note', 'source', 'compact'],
+	i18n: i18n('common/views/components/note-menu.vue'),
+	props: ['note', 'source'],
+	data() {
+		return {
+			isFavorited: false,
+			isWatching: false
+		};
+	},
 	computed: {
-		items() {
-			const items = [{
-				icon: '%fa:info-circle%',
-				text: '%i18n:@detail%',
+		items(): any[] {
+			return [{
+				icon: 'at',
+				text: this.$t('mention'),
+				action: this.mention
+			}, null, {
+				icon: 'info-circle',
+				text: this.$t('detail'),
 				action: this.detail
 			}, {
-				icon: '%fa:link%',
-				text: '%i18n:@copy-link%',
+				icon: faCopy,
+				text: this.$t('copy-content'),
+				action: this.copyContent
+			}, {
+				icon: 'link',
+				text: this.$t('copy-link'),
 				action: this.copyLink
-			}];
-
-			if (this.note.uri) {
-				items.push({
-					icon: '%fa:external-link-square-alt%',
-					text: '%i18n:@remote%',
-					action: () => {
-						window.open(this.note.uri, '_blank');
-					}
-				});
-			}
-
-			items.push(null);
-
-			if (this.note.isFavorited) {
-				items.push({
-					icon: '%fa:star%',
-					text: '%i18n:@unfavorite%',
-					action: this.unfavorite
-				});
-			} else {
-				items.push({
-					icon: '%fa:star%',
-					text: '%i18n:@favorite%',
-					action: this.favorite
-				});
-			}
-
-			if (this.note.userId == this.$store.state.i.id) {
-				if ((this.$store.state.i.pinnedNoteIds || []).includes(this.note.id)) {
-					items.push({
-						icon: '%fa:thumbtack%',
-						text: '%i18n:@unpin%',
-						action: this.unpin
-					});
-				} else {
-					items.push({
-						icon: '%fa:thumbtack%',
-						text: '%i18n:@pin%',
-						action: this.pin
-					});
+			}, this.note.uri ? {
+				icon: 'external-link-square-alt',
+				text: this.$t('remote'),
+				action: () => {
+					window.open(this.note.uri, '_blank');
 				}
-			}
-
-			if (this.note.userId == this.$store.state.i.id || this.$store.state.i.isAdmin) {
-				items.push(null);
-				items.push({
-					icon: '%fa:trash-alt R%',
-					text: '%i18n:@delete%',
+			} : undefined,
+			null,
+			this.isFavorited ? {
+				icon: 'star',
+				text: this.$t('unfavorite'),
+				action: () => this.toggleFavorite(false)
+			} : {
+				icon: 'star',
+				text: this.$t('favorite'),
+				action: () => this.toggleFavorite(true)
+			},
+			this.note.userId != this.$store.state.i.id ? this.isWatching ? {
+				icon: faEyeSlash,
+				text: this.$t('unwatch'),
+				action: () => this.toggleWatch(false)
+			} : {
+				icon: faEye,
+				text: this.$t('watch'),
+				action: () => this.toggleWatch(true)
+			} : undefined,
+			this.note.userId == this.$store.state.i.id ? (this.$store.state.i.pinnedNoteIds || []).includes(this.note.id) ? {
+				icon: 'thumbtack',
+				text: this.$t('unpin'),
+				action: () => this.togglePin(false)
+			} : {
+				icon: 'thumbtack',
+				text: this.$t('pin'),
+				action: () => this.togglePin(true)
+			} : undefined,
+			...(this.note.userId == this.$store.state.i.id || this.$store.state.i.isAdmin || this.$store.state.i.isModerator ? [
+				null, {
+					icon: ['far', 'trash-alt'],
+					text: this.$t('delete'),
 					action: this.del
-				});
-			}
-
-			return items;
+				}]
+				: []
+			)]
+			.filter(x => x !== undefined)
 		}
 	},
 
+	created() {
+		this.$root.api('notes/state', {
+			noteId: this.note.id
+		}).then(state => {
+			this.isFavorited = state.isFavorited;
+			this.isWatching = state.isWatching;
+		});
+	},
+
 	methods: {
+		mention() {
+			this.$post({ mention: this.note.user });
+		},
+
 		detail() {
-			this.$router.push(`/notes/${ this.note.id }`);
+			this.$router.push(`/notes/${this.note.id}`);
 		},
 
-		copyLink() {
-			copyToClipboard(`${url}/notes/${ this.note.id }`);
-		},
-
-		pin() {
-			(this as any).api('i/pin', {
-				noteId: this.note.id
-			}).then(() => {
-				(this as any).os.new(Ok);
-				this.destroyDom();
+		copyContent() {
+			copyToClipboard(this.note.text);
+			this.$root.dialog({
+				type: 'success',
+				splash: true
 			});
 		},
 
-		unpin() {
-			(this as any).api('i/unpin', {
+		copyLink() {
+			copyToClipboard(`${url}/notes/${this.note.id}`);
+			this.$root.dialog({
+				type: 'success',
+				splash: true
+			});
+		},
+
+		togglePin(pin: boolean) {
+			this.$root.api(pin ? 'i/pin' : 'i/unpin', {
 				noteId: this.note.id
 			}).then(() => {
+				this.$root.dialog({
+					type: 'success',
+					splash: true
+				});
 				this.destroyDom();
+			}).catch(e => {
+				if (e.id === '72dab508-c64d-498f-8740-a8eec1ba385a') {
+					this.$root.dialog({
+						type: 'error',
+						text: this.$t('pin-limit-exceeded')
+					});
+				}
 			});
 		},
 
 		del() {
-			if (!window.confirm('%i18n:@delete-confirm%')) return;
-			(this as any).api('notes/delete', {
+			this.$root.dialog({
+				type: 'warning',
+				text: this.$t('delete-confirm'),
+				showCancelButton: true
+			}).then(({ canceled }) => {
+				if (canceled) return;
+
+				this.$root.api('notes/delete', {
+					noteId: this.note.id
+				}).then(() => {
+					this.destroyDom();
+				});
+			});
+		},
+
+		toggleFavorite(favorite: boolean) {
+			this.$root.api(favorite ? 'notes/favorites/create' : 'notes/favorites/delete', {
 				noteId: this.note.id
 			}).then(() => {
+				this.$root.dialog({
+					type: 'success',
+					splash: true
+				});
 				this.destroyDom();
 			});
 		},
 
-		favorite() {
-			(this as any).api('notes/favorites/create', {
+		toggleWatch(watch: boolean) {
+			this.$root.api(watch ? 'notes/watching/create' : 'notes/watching/delete', {
 				noteId: this.note.id
 			}).then(() => {
-				(this as any).os.new(Ok);
-				this.destroyDom();
-			});
-		},
-
-		unfavorite() {
-			(this as any).api('notes/favorites/delete', {
-				noteId: this.note.id
-			}).then(() => {
-				(this as any).os.new(Ok);
+				this.$root.dialog({
+					type: 'success',
+					splash: true
+				});
 				this.destroyDom();
 			});
 		},

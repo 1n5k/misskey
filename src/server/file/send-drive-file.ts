@@ -1,70 +1,58 @@
 import * as Koa from 'koa';
 import * as send from 'koa-send';
-import * as mongodb from 'mongodb';
-import DriveFile, { getDriveFileBucket } from '../../models/drive-file';
-import DriveFileThumbnail, { getDriveFileThumbnailBucket } from '../../models/drive-file-thumbnail';
+import * as rename from 'rename';
+import { serverLogger } from '..';
+import { contentDisposition } from '../../misc/content-disposition';
+import { DriveFiles } from '../../models';
+import { InternalStorage } from '../../services/drive/internal-storage';
 
 const assets = `${__dirname}/../../server/file/assets/`;
 
-const commonReadableHandlerGenerator = (ctx: Koa.Context) => (e: Error): void => {
-	console.error(e);
+const commonReadableHandlerGenerator = (ctx: Koa.BaseContext) => (e: Error): void => {
+	serverLogger.error(e);
 	ctx.status = 500;
 };
 
-export default async function(ctx: Koa.Context) {
-	// Validate id
-	if (!mongodb.ObjectID.isValid(ctx.params.id)) {
-		ctx.throw(400, 'incorrect id');
-		return;
-	}
-
-	const fileId = new mongodb.ObjectID(ctx.params.id);
+export default async function(ctx: Koa.BaseContext) {
+	const key = ctx.params.key;
 
 	// Fetch drive file
-	const file = await DriveFile.findOne({ _id: fileId });
+	const file = await DriveFiles.createQueryBuilder('file')
+		.where('file.accessKey = :accessKey', { accessKey: key })
+		.orWhere('file.thumbnailAccessKey = :thumbnailAccessKey', { thumbnailAccessKey: key })
+		.orWhere('file.webpublicAccessKey = :webpublicAccessKey', { webpublicAccessKey: key })
+		.getOne();
 
 	if (file == null) {
 		ctx.status = 404;
-		await send(ctx, '/dummy.png', { root: assets });
+		await send(ctx as any, '/dummy.png', { root: assets });
 		return;
 	}
 
-	if (file.metadata.deletedAt) {
-		ctx.status = 410;
-		await send(ctx, '/tombstone.png', { root: assets });
-		return;
-	}
-
-	if (file.metadata.withoutChunks) {
+	if (!file.storedInternal) {
 		ctx.status = 204;
 		return;
 	}
 
-	const sendRaw = async () => {
-		const bucket = await getDriveFileBucket();
-		const readable = bucket.openDownloadStream(fileId);
-		readable.on('error', commonReadableHandlerGenerator(ctx));
-		ctx.set('Content-Type', file.contentType);
-		ctx.body = readable;
-	};
+	const isThumbnail = file.thumbnailAccessKey === key;
+	const isWebpublic = file.webpublicAccessKey === key;
 
-	if ('thumbnail' in ctx.query) {
-		const thumb = await DriveFileThumbnail.findOne({
-			'metadata.originalId': fileId
-		});
-
-		if (thumb != null) {
-			ctx.set('Content-Type', 'image/jpeg');
-			const bucket = await getDriveFileThumbnailBucket();
-			ctx.body = bucket.openDownloadStream(thumb._id);
-		} else {
-			await sendRaw();
-		}
+	if (isThumbnail) {
+		ctx.set('Content-Type', 'image/jpeg');
+		ctx.set('Content-Disposition', contentDisposition('inline', `${rename(file.name, { suffix: '-thumb', extname: '.jpeg' })}`));
+		ctx.body = InternalStorage.read(key);
+	} else if (isWebpublic) {
+		ctx.set('Content-Type', file.type === 'image/apng' ? 'image/png' : file.type);
+		ctx.set('Content-Disposition', contentDisposition('inline', `${rename(file.name, { suffix: '-web' })}`));
+		ctx.body = InternalStorage.read(key);
 	} else {
 		if ('download' in ctx.query) {
-			ctx.set('Content-Disposition', 'attachment');
+			ctx.set('Content-Disposition', contentDisposition('attachment', `${file.name}`));
 		}
 
-		await sendRaw();
+		const readable = InternalStorage.read(file.accessKey!);
+		readable.on('error', commonReadableHandlerGenerator(ctx));
+		ctx.set('Content-Type', file.type);
+		ctx.body = readable;
 	}
 }

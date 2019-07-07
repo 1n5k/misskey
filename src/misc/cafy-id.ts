@@ -1,27 +1,13 @@
-import * as mongo from 'mongodb';
 import { Context } from 'cafy';
-import isObjectId from './is-objectid';
 
-export const isAnId = (x: any) => mongo.ObjectID.isValid(x);
-export const isNotAnId = (x: any) => !isAnId(x);
+export class ID<Maybe = string> extends Context<string | (Maybe extends {} ? string : Maybe)> {
+	public readonly name = 'ID';
 
-/**
- * ID
- */
-export default class ID extends Context<mongo.ObjectID> {
-	constructor() {
-		super();
+	constructor(optional = false, nullable = false) {
+		super(optional, nullable);
 
-		this.transform = v => {
-			if (isAnId(v) && !isObjectId(v)) {
-				return new mongo.ObjectID(v);
-			} else {
-				return v;
-			}
-		};
-
-		this.push(v => {
-			if (!isObjectId(v) && isNotAnId(v)) {
+		this.push((v: any) => {
+			if (typeof v !== 'string') {
 				return new Error('must-be-an-id');
 			}
 			return true;
@@ -29,6 +15,18 @@ export default class ID extends Context<mongo.ObjectID> {
 	}
 
 	public getType() {
-		return super.getType('string');
+		return super.getType('String');
+	}
+
+	public makeOptional(): ID<undefined> {
+		return new ID(true, false);
+	}
+
+	public makeNullable(): ID<null> {
+		return new ID(false, true);
+	}
+
+	public makeOptionalNullable(): ID<undefined | null> {
+		return new ID(true, true);
 	}
 }

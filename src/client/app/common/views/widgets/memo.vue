@@ -1,18 +1,19 @@
 <template>
 <div class="mkw-memo">
-	<mk-widget-container :show-header="!props.compact">
-		<template slot="header">%fa:R sticky-note%%i18n:@title%</template>
+	<ui-container :show-header="!props.compact">
+		<template #header><fa :icon="['far', 'sticky-note']"/>{{ $t('title') }}</template>
 
 		<div class="mkw-memo--body">
-			<textarea v-model="text" placeholder="%i18n:@memo%" @input="onChange"></textarea>
-			<button @click="saveMemo" :disabled="!changed">%i18n:@save%</button>
+			<textarea v-model="text" :placeholder="$t('placeholder')" @input="onChange"></textarea>
+			<button @click="saveMemo" :disabled="!changed">{{ $t('save') }}</button>
 		</div>
-	</mk-widget-container>
+	</ui-container>
 </div>
 </template>
 
 <script lang="ts">
 import define from '../../define-widget';
+import i18n from '../../../i18n';
 
 export default define({
 	name: 'memo',
@@ -20,6 +21,7 @@ export default define({
 		compact: false
 	})
 }).extend({
+	i18n: i18n('common/views/widgets/memo.vue'),
 	data() {
 		return {
 			text: null,
@@ -70,7 +72,7 @@ export default define({
 			color var(--inputText)
 			background var(--face)
 			border none
-			border-bottom solid 1px var(--faceDivider)
+			border-bottom solid var(--lineWidth) var(--faceDivider)
 			border-radius 0
 
 		> button

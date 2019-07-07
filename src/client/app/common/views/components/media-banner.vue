@@ -1,16 +1,17 @@
 <template>
 <div class="mk-media-banner">
 	<div class="sensitive" v-if="media.isSensitive && hide" @click="hide = false">
-		<span class="icon">%fa:exclamation-triangle%</span>
-		<b>%i18n:@sensitive%</b>
-		<span>%i18n:@click-to-show%</span>
+		<span class="icon"><fa icon="exclamation-triangle"/></span>
+		<b>{{ $t('sensitive') }}</b>
+		<span>{{ $t('click-to-show') }}</span>
 	</div>
-	<div class="audio" v-else-if="media.type.startsWith('audio')">
+	<div class="audio" v-else-if="media.type.startsWith('audio') && media.type !== 'audio/midi'">
 		<audio class="audio"
 			:src="media.url"
 			:title="media.name"
 			controls
 			ref="audio"
+			@volumechange="volumechange"
 			preload="metadata" />
 	</div>
 	<a class="download" v-else
@@ -18,7 +19,7 @@
 		:title="media.name"
 		:download="media.name"
 	>
-		<span class="icon">%fa:download%</span>
+		<span class="icon"><fa icon="download"/></span>
 		<b>{{ media.name }}</b>
 	</a>
 </div>
@@ -26,8 +27,10 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import i18n from '../../../i18n';
 
 export default Vue.extend({
+	i18n: i18n('common/views/components/media-banner.vue'),
 	props: {
 		media: {
 			type: Object,
@@ -38,7 +41,17 @@ export default Vue.extend({
 		return {
 			hide: true
 		};
-	}
+	},
+	mounted() {
+		const audioTag = this.$refs.audio as HTMLAudioElement;
+		if (audioTag) audioTag.volume = this.$store.state.device.mediaVolume;
+	},
+	methods: {
+		volumechange() {
+			const audioTag = this.$refs.audio as HTMLAudioElement;
+			this.$store.commit('device/set', { key: 'mediaVolume', value: audioTag.volume });
+		},
+	},
 })
 </script>
 

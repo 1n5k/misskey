@@ -1,19 +1,23 @@
-import * as mongo from 'mongodb';
 import * as Router from 'koa-router';
-const json = require('koa-json-body');
-const httpSignature = require('http-signature');
+import * as json from 'koa-json-body';
+import * as httpSignature from 'http-signature';
 
-import { createHttpJob } from '../queue';
-import pack from '../remote/activitypub/renderer';
-import Note from '../models/note';
-import User, { isLocalUser, ILocalUser, IUser } from '../models/user';
+import { renderActivity } from '../remote/activitypub/renderer';
 import renderNote from '../remote/activitypub/renderer/note';
 import renderKey from '../remote/activitypub/renderer/key';
-import renderPerson from '../remote/activitypub/renderer/person';
+import { renderPerson } from '../remote/activitypub/renderer/person';
+import renderEmoji from '../remote/activitypub/renderer/emoji';
 import Outbox, { packActivity } from './activitypub/outbox';
 import Followers from './activitypub/followers';
 import Following from './activitypub/following';
 import Featured from './activitypub/featured';
+import renderQuestion from '../remote/activitypub/renderer/question';
+import { inbox as processInbox } from '../queue';
+import { isSelfHost } from '../misc/convert-host';
+import { Notes, Users, Emojis, UserKeypairs, Polls } from '../models';
+import { ILocalUser, User } from '../models/entities/user';
+import { In } from 'typeorm';
+import { ensure } from '../prelude/ensure';
 
 // Init router
 const router = new Router();
@@ -32,11 +36,7 @@ function inbox(ctx: Router.IRouterContext) {
 		return;
 	}
 
-	createHttpJob({
-		type: 'processInbox',
-		activity: ctx.request.body,
-		signature
-	});
+	processInbox(ctx.request.body, signature);
 
 	ctx.status = 202;
 }
@@ -64,35 +64,70 @@ router.post('/users/:user/inbox', json(), inbox);
 router.get('/notes/:note', async (ctx, next) => {
 	if (!isActivityPubReq(ctx)) return await next();
 
-	const note = await Note.findOne({
-		_id: new mongo.ObjectID(ctx.params.note),
-		visibility: { $in: ['public', 'home'] }
+	const note = await Notes.findOne({
+		id: ctx.params.note,
+		visibility: In(['public', 'home']),
+		localOnly: false
 	});
 
-	if (note === null) {
+	if (note == null) {
 		ctx.status = 404;
 		return;
 	}
 
-	ctx.body = pack(await renderNote(note, false));
+	// リモートだったらリダイレクト
+	if (note.userHost != null) {
+		if (note.uri == null || isSelfHost(note.userHost)) {
+			ctx.status = 500;
+			return;
+		}
+		ctx.redirect(note.uri);
+		return;
+	}
+
+	ctx.body = renderActivity(await renderNote(note, false));
 	ctx.set('Cache-Control', 'public, max-age=180');
 	setResponseType(ctx);
 });
 
 // note activity
 router.get('/notes/:note/activity', async ctx => {
-	const note = await Note.findOne({
-		_id: new mongo.ObjectID(ctx.params.note),
-		visibility: { $in: ['public', 'home'] }
+	const note = await Notes.findOne({
+		id: ctx.params.note,
+		userHost: null,
+		visibility: In(['public', 'home']),
+		localOnly: false
 	});
 
-	if (note === null) {
+	if (note == null) {
 		ctx.status = 404;
 		return;
 	}
 
-	ctx.body = pack(await packActivity(note));
+	ctx.body = renderActivity(await packActivity(note));
 	ctx.set('Cache-Control', 'public, max-age=180');
+	setResponseType(ctx);
+});
+
+// question
+router.get('/questions/:question', async (ctx, next) => {
+	const pollNote = await Notes.findOne({
+		id: ctx.params.question,
+		userHost: null,
+		visibility: In(['public', 'home']),
+		localOnly: false,
+		hasPoll: true
+	});
+
+	if (pollNote == null) {
+		ctx.status = 404;
+		return;
+	}
+
+	const user = await Users.findOne(pollNote.userId).then(ensure);
+	const poll = await Polls.findOne({ noteId: pollNote.id }).then(ensure);
+
+	ctx.body = renderActivity(await renderQuestion(user as ILocalUser, pollNote, poll));
 	setResponseType(ctx);
 });
 
@@ -110,20 +145,22 @@ router.get('/users/:user/collections/featured', Featured);
 
 // publickey
 router.get('/users/:user/publickey', async ctx => {
-	const userId = new mongo.ObjectID(ctx.params.user);
+	const userId = ctx.params.user;
 
-	const user = await User.findOne({
-		_id: userId,
+	const user = await Users.findOne({
+		id: userId,
 		host: null
 	});
 
-	if (user === null) {
+	if (user == null) {
 		ctx.status = 404;
 		return;
 	}
 
-	if (isLocalUser(user)) {
-		ctx.body = pack(renderKey(user));
+	const keypair = await UserKeypairs.findOne(user.id).then(ensure);
+
+	if (Users.isLocalUser(user)) {
+		ctx.body = renderActivity(renderKey(user, keypair));
 		ctx.set('Cache-Control', 'public, max-age=180');
 		setResponseType(ctx);
 	} else {
@@ -132,24 +169,26 @@ router.get('/users/:user/publickey', async ctx => {
 });
 
 // user
-async function userInfo(ctx: Router.IRouterContext, user: IUser) {
-	if (user === null) {
+async function userInfo(ctx: Router.IRouterContext, user: User) {
+	if (user == null) {
 		ctx.status = 404;
 		return;
 	}
 
-	ctx.body = pack(await renderPerson(user as ILocalUser));
+	ctx.body = renderActivity(await renderPerson(user as ILocalUser));
 	ctx.set('Cache-Control', 'public, max-age=180');
 	setResponseType(ctx);
 }
 
-router.get('/users/:user', async ctx => {
-	const userId = new mongo.ObjectID(ctx.params.user);
+router.get('/users/:user', async (ctx, next) => {
+	if (!isActivityPubReq(ctx)) return await next();
 
-	const user = await User.findOne({
-		_id: userId,
+	const userId = ctx.params.user;
+
+	const user = await Users.findOne({
+		id: userId,
 		host: null
-	});
+	}).then(ensure);
 
 	await userInfo(ctx, user);
 });
@@ -157,13 +196,30 @@ router.get('/users/:user', async ctx => {
 router.get('/@:user', async (ctx, next) => {
 	if (!isActivityPubReq(ctx)) return await next();
 
-	const user = await User.findOne({
+	const user = await Users.findOne({
 		usernameLower: ctx.params.user.toLowerCase(),
 		host: null
-	});
+	}).then(ensure);
 
 	await userInfo(ctx, user);
 });
 //#endregion
+
+// emoji
+router.get('/emojis/:emoji', async ctx => {
+	const emoji = await Emojis.findOne({
+		host: null,
+		name: ctx.params.emoji
+	});
+
+	if (emoji == null) {
+		ctx.status = 404;
+		return;
+	}
+
+	ctx.body = renderActivity(await renderEmoji(emoji));
+	ctx.set('Cache-Control', 'public, max-age=180');
+	setResponseType(ctx);
+});
 
 export default router;

@@ -1,6 +1,5 @@
-//import $ from 'cafy'; import ID from '../../../../../cafy-id';
-import FollowRequest, { pack } from '../../../../../models/follow-request';
-import { ILocalUser } from '../../../../../models/user';
+import define from '../../../define';
+import { FollowRequests } from '../../../../../models';
 
 export const meta = {
 	desc: {
@@ -8,16 +7,17 @@ export const meta = {
 		'en-US': 'Get all pending received follow requests.'
 	},
 
+	tags: ['following', 'account'],
+
 	requireCredential: true,
 
-	kind: 'following-read'
+	kind: 'read:following'
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	const reqs = await FollowRequest.find({
-		followeeId: user._id
+export default define(meta, async (ps, user) => {
+	const reqs = await FollowRequests.find({
+		followeeId: user.id
 	});
 
-	// Send response
-	res(await Promise.all(reqs.map(req => pack(req))));
+	return await Promise.all(reqs.map(req => FollowRequests.pack(req)));
 });

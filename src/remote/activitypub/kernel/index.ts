@@ -1,7 +1,8 @@
 import { Object } from '../type';
-import { IRemoteUser } from '../../../models/user';
+import { IRemoteUser } from '../../../models/entities/user';
 import create from './create';
 import performDeleteActivity from './delete';
+import performUpdateActivity from './update';
 import follow from './follow';
 import undo from './undo';
 import like from './like';
@@ -11,8 +12,11 @@ import reject from './reject';
 import add from './add';
 import remove from './remove';
 import block from './block';
+import { apLogger } from '../logger';
 
 const self = async (actor: IRemoteUser, activity: Object): Promise<void> => {
+	if (actor.isSuspended) return;
+
 	switch (activity.type) {
 	case 'Create':
 		await create(actor, activity);
@@ -20,6 +24,10 @@ const self = async (actor: IRemoteUser, activity: Object): Promise<void> => {
 
 	case 'Delete':
 		await performDeleteActivity(actor, activity);
+		break;
+
+	case 'Update':
+		await performUpdateActivity(actor, activity);
 		break;
 
 	case 'Follow':
@@ -35,11 +43,11 @@ const self = async (actor: IRemoteUser, activity: Object): Promise<void> => {
 		break;
 
 	case 'Add':
-		await add(actor, activity).catch(err => console.log(err));
+		await add(actor, activity).catch(err => apLogger.error(err));
 		break;
 
 	case 'Remove':
-		await remove(actor, activity).catch(err => console.log(err));
+		await remove(actor, activity).catch(err => apLogger.error(err));
 		break;
 
 	case 'Announce':
@@ -64,8 +72,8 @@ const self = async (actor: IRemoteUser, activity: Object): Promise<void> => {
 		break;
 
 	default:
-		console.warn(`unknown activity type: ${(activity as any).type}`);
-		return null;
+		apLogger.warn(`unknown activity type: ${(activity as any).type}`);
+		return;
 	}
 };
 

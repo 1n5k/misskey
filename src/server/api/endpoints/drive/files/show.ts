@@ -1,7 +1,9 @@
-import $ from 'cafy'; import ID from '../../../../../misc/cafy-id';
-import DriveFile, { pack } from '../../../../../models/drive-file';
-import { ILocalUser } from '../../../../../models/user';
-import getParams from '../../../get-params';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
+import define from '../../../define';
+import { ApiError } from '../../../error';
+import { DriveFile } from '../../../../../models/entities/drive-file';
+import { DriveFiles } from '../../../../../models';
 
 export const meta = {
 	stability: 'stable',
@@ -11,40 +13,86 @@ export const meta = {
 		'en-US': 'Get specified file of drive.'
 	},
 
+	tags: ['drive'],
+
 	requireCredential: true,
 
-	kind: 'drive-read',
+	kind: 'read:drive',
 
 	params: {
-		fileId: $.type(ID).note({
+		fileId: {
+			validator: $.optional.type(ID),
 			desc: {
 				'ja-JP': '対象のファイルID',
 				'en-US': 'Target file ID'
 			}
-		})
+		},
+
+		url: {
+			validator: $.optional.str,
+			desc: {
+				'ja-JP': '対象のファイルのURL',
+				'en-US': 'Target file URL'
+			}
+		}
+	},
+
+	res: {
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		ref: 'DriveFile',
+	},
+
+	errors: {
+		noSuchFile: {
+			message: 'No such file.',
+			code: 'NO_SUCH_FILE',
+			id: '067bc436-2718-4795-b0fb-ecbe43949e31'
+		},
+
+		accessDenied: {
+			message: 'Access denied.',
+			code: 'ACCESS_DENIED',
+			id: '25b73c73-68b1-41d0-bad1-381cfdf6579f'
+		},
+
+		fileIdOrUrlRequired: {
+			message: 'fileId or url required.',
+			code: 'INVALID_PARAM',
+			id: '89674805-722c-440c-8d88-5641830dc3e4'
+		}
 	}
 };
 
-export default (params: any, user: ILocalUser) => new Promise(async (res, rej) => {
-	const [ps, psErr] = getParams(meta, params);
-	if (psErr) return rej(psErr);
+export default define(meta, async (ps, user) => {
+	let file: DriveFile | undefined;
 
-	// Fetch file
-	const file = await DriveFile
-		.findOne({
-			_id: ps.fileId,
-			'metadata.userId': user._id,
-			'metadata.deletedAt': { $exists: false }
+	if (ps.fileId) {
+		file = await DriveFiles.findOne(ps.fileId);
+	} else if (ps.url) {
+		file = await DriveFiles.findOne({
+			where: [{
+				url: ps.url
+			}, {
+				webpublicUrl: ps.url
+			}, {
+				thumbnailUrl: ps.url
+			}],
 		});
-
-	if (file === null) {
-		return rej('file-not-found');
+	} else {
+		throw new ApiError(meta.errors.fileIdOrUrlRequired);
 	}
 
-	// Serialize
-	const _file = await pack(file, {
-		detail: true
-	});
+	if (file == null) {
+		throw new ApiError(meta.errors.noSuchFile);
+	}
 
-	res(_file);
+	if (!user.isAdmin && !user.isModerator && (file.userId !== user.id)) {
+		throw new ApiError(meta.errors.accessDenied);
+	}
+
+	return await DriveFiles.pack(file, {
+		detail: true,
+		self: true
+	});
 });

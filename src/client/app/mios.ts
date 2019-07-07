@@ -4,7 +4,7 @@ import { EventEmitter } from 'eventemitter3';
 import * as uuid from 'uuid';
 
 import initStore from './store';
-import { apiUrl, version, lang } from './config';
+import { apiUrl, version, locale } from './config';
 import Progress from './common/scripts/loading';
 
 import Err from './common/views/components/connect-failed.vue';
@@ -14,41 +14,6 @@ import Stream from './common/scripts/stream';
 let spinner = null;
 let pending = 0;
 //#endregion
-
-export type API = {
-	chooseDriveFile: (opts: {
-		title?: string;
-		currentFolder?: any;
-		multiple?: boolean;
-	}) => Promise<any>;
-
-	chooseDriveFolder: (opts: {
-		title?: string;
-		currentFolder?: any;
-	}) => Promise<any>;
-
-	dialog: (opts: {
-		title: string;
-		text: string;
-		actions?: Array<{
-			text: string;
-			id?: string;
-		}>;
-	}) => Promise<string>;
-
-	input: (opts: {
-		title: string;
-		placeholder?: string;
-		default?: string;
-	}) => Promise<string>;
-
-	post: (opts?: {
-		reply?: any;
-		renote?: any;
-	}) => void;
-
-	notify: (message: string) => void;
-};
 
 /**
  * Misskey Operating System
@@ -63,21 +28,12 @@ export default class MiOS extends EventEmitter {
 	};
 
 	public get instanceName() {
-		return this.meta ? this.meta.data.name : 'Misskey';
+		return this.meta ? (this.meta.data.name || 'Misskey') : 'Misskey';
 	}
 
 	private isMetaFetching = false;
 
 	public app: Vue;
-
-	public new(vm, props) {
-		const x = new vm({
-			parent: this.app,
-			propsData: props
-		}).$mount();
-		document.body.appendChild(x.$el);
-		return x;
-	}
 
 	/**
 	 * Whether is debug mode
@@ -87,8 +43,6 @@ export default class MiOS extends EventEmitter {
 	}
 
 	public store: ReturnType<typeof initStore>;
-
-	public apis: API;
 
 	/**
 	 * A connection manager of home stream
@@ -218,7 +172,11 @@ export default class MiOS extends EventEmitter {
 			callback();
 
 			// Init service worker
-			if (this.shouldRegisterSw) this.registerSw();
+			if (this.shouldRegisterSw) {
+				this.getMeta().then(data => {
+					this.registerSw(data.swPublickey);
+				});
+			}
 		};
 
 		// キャッシュがあったとき
@@ -236,8 +194,8 @@ export default class MiOS extends EventEmitter {
 				this.store.dispatch('mergeMe', freshData);
 			});
 		} else {
-			// Get token from cookie
-			const i = (document.cookie.match(/i=(!\w+)/) || [null, null])[1];
+			// Get token from cookie or localStorage
+			const i = (document.cookie.match(/i=(\w+)/) || [null, null])[1] || localStorage.getItem('i');
 
 			fetchme(i, me => {
 				if (me) {
@@ -320,25 +278,10 @@ export default class MiOS extends EventEmitter {
 				});
 			});
 
-			main.on('homeUpdated', x => {
-				this.store.commit('settings/setHome', x);
-			});
-
-			main.on('mobileHomeUpdated', x => {
-				this.store.commit('settings/setMobileHome', x);
-			});
-
-			main.on('widgetUpdated', x => {
-				this.store.commit('settings/setWidget', {
-					id: x.id,
-					data: x.data
-				});
-			});
-
 			// トークンが再生成されたとき
 			// このままではMisskeyが利用できないので強制的にサインアウトさせる
 			main.on('myTokenRegenerated', () => {
-				alert('%i18n:common.my-token-regenerated%');
+				alert(locale['common']['my-token-regenerated']);
 				this.signout();
 			});
 		}
@@ -348,7 +291,7 @@ export default class MiOS extends EventEmitter {
 	 * Register service worker
 	 */
 	@autobind
-	private registerSw() {
+	private registerSw(swPublickey) {
 		// Check whether service worker and push manager supported
 		const isSwSupported =
 			('serviceWorker' in navigator) && ('PushManager' in window);
@@ -374,7 +317,7 @@ export default class MiOS extends EventEmitter {
 
 				// A public key your push server will use to send
 				// messages to client apps via a push server.
-				applicationServerKey: urlBase64ToUint8Array(this.meta.data.swPublickey)
+				applicationServerKey: urlBase64ToUint8Array(swPublickey)
 			};
 
 			// Subscribe push notification
@@ -411,7 +354,7 @@ export default class MiOS extends EventEmitter {
 		});
 
 		// The path of service worker script
-		const sw = `/sw.${version}.${lang}.js`;
+		const sw = `/sw.${version}.js`;
 
 		// Register service worker
 		navigator.serviceWorker.register(sw).then(registration => {
@@ -431,78 +374,60 @@ export default class MiOS extends EventEmitter {
 	 * @param data パラメータ
 	 */
 	@autobind
-	public api(endpoint: string, data: { [x: string]: any } = {}, forceFetch = false): Promise<{ [x: string]: any }> {
-		if (++pending === 1) {
-			spinner = document.createElement('div');
-			spinner.setAttribute('id', 'wait');
-			document.body.appendChild(spinner);
+	public api(endpoint: string, data: { [x: string]: any } = {}, silent = false): Promise<{ [x: string]: any }> {
+		if (!silent) {
+			if (++pending === 1) {
+				spinner = document.createElement('div');
+				spinner.setAttribute('id', 'wait');
+				document.body.appendChild(spinner);
+			}
 		}
 
 		const onFinally = () => {
-			if (--pending === 0) spinner.parentNode.removeChild(spinner);
+			if (!silent) {
+				if (--pending === 0) spinner.parentNode.removeChild(spinner);
+			}
 		};
 
 		const promise = new Promise((resolve, reject) => {
-			const viaStream = this.stream && this.stream.state == 'connected' && this.store.state.device.apiViaStream && !forceFetch;
+			// Append a credential
+			if (this.store.getters.isSignedIn) (data as any).i = this.store.state.i.token;
 
-			if (viaStream) {
-				const id = Math.random().toString().substr(2, 8);
+			const req = {
+				id: uuid(),
+				date: new Date(),
+				name: endpoint,
+				data,
+				res: null,
+				status: null
+			};
 
-				this.stream.once(`api:${id}`, res => {
-					if (res == null || Object.keys(res).length == 0) {
-						resolve(null);
-					} else if (res.res) {
-						resolve(res.res);
-					} else {
-						reject(res.e);
-					}
-				});
+			if (this.debug) {
+				this.requests.push(req);
+			}
 
-				this.stream.send('api', {
-					id: id,
-					ep: endpoint,
-					data: data
-				});
-			} else {
-				// Append a credential
-				if (this.store.getters.isSignedIn) (data as any).i = this.store.state.i.token;
-
-				const req = {
-					id: uuid(),
-					date: new Date(),
-					name: endpoint,
-					data,
-					res: null,
-					status: null
-				};
+			// Send request
+			fetch(endpoint.indexOf('://') > -1 ? endpoint : `${apiUrl}/${endpoint}`, {
+				method: 'POST',
+				body: JSON.stringify(data),
+				credentials: endpoint === 'signin' ? 'include' : 'omit',
+				cache: 'no-cache'
+			}).then(async (res) => {
+				const body = res.status === 204 ? null : await res.json();
 
 				if (this.debug) {
-					this.requests.push(req);
+					req.status = res.status;
+					req.res = body;
 				}
 
-				// Send request
-				fetch(endpoint.indexOf('://') > -1 ? endpoint : `${apiUrl}/${endpoint}`, {
-					method: 'POST',
-					body: JSON.stringify(data),
-					credentials: endpoint === 'signin' ? 'include' : 'omit',
-					cache: 'no-cache'
-				}).then(async (res) => {
-					const body = res.status === 204 ? null : await res.json();
-
-					if (this.debug) {
-						req.status = res.status;
-						req.res = body;
-					}
-
-					if (res.status === 200) {
-						resolve(body);
-					} else if (res.status === 204) {
-						resolve();
-					} else {
-						reject(body.error);
-					}
-				}).catch(reject);
-			}
+				if (res.status === 200) {
+					resolve(body);
+				} else if (res.status === 204) {
+					resolve();
+				} else {
+					reject(body.error);
+				}
+			}).catch(reject);
 		});
 
 		promise.then(onFinally, onFinally);
@@ -537,7 +462,9 @@ export default class MiOS extends EventEmitter {
 			// forceが有効, meta情報を保持していない or 期限切れ
 			if (force || this.meta == null || Date.now() - this.meta.chachedAt.getTime() > expire) {
 				this.isMetaFetching = true;
-				const meta = await this.api('meta');
+				const meta = await this.api('meta', {
+					detail: false
+				});
 				this.meta = {
 					data: meta,
 					chachedAt: new Date()
@@ -577,7 +504,7 @@ class WindowSystem extends EventEmitter {
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
 	const padding = '='.repeat((4 - base64String.length % 4) % 4);
 	const base64 = (base64String + padding)
-		.replace(/\-/g, '+')
+		.replace(/-/g, '+')
 		.replace(/_/g, '/');
 
 	const rawData = window.atob(base64);
