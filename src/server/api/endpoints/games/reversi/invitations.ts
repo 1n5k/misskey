@@ -1,20 +1,17 @@
-import Matching, { pack as packMatching } from '../../../../../models/games/reversi/matching';
 import define from '../../../define';
+import { ReversiMatchings } from '../../../../../models';
 
 export const meta = {
+	tags: ['games'],
+
 	requireCredential: true
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
+export default define(meta, async (ps, user) => {
 	// Find session
-	const invitations = await Matching.find({
-		childId: user._id
-	}, {
-		sort: {
-			_id: -1
-		}
+	const invitations = await ReversiMatchings.find({
+		childId: user.id
 	});
 
-	// Reponse
-	res(Promise.all(invitations.map(async (i) => await packMatching(i, user))));
-}));
+	return await Promise.all(invitations.map((i) => ReversiMatchings.pack(i, user)));
+});

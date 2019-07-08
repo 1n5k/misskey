@@ -1,6 +1,8 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../misc/cafy-id';
-import Blocking, { packMany } from '../../../../models/blocking';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
 import define from '../../define';
+import { Blockings } from '../../../../models';
+import { makePaginationQuery } from '../../common/make-pagination-query';
 
 export const meta = {
 	desc: {
@@ -8,58 +10,45 @@ export const meta = {
 		'en-US': 'Get blocking users.'
 	},
 
+	tags: ['blocking', 'account'],
+
 	requireCredential: true,
 
-	kind: 'following-read',
+	kind: 'read:blocks',
 
 	params: {
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 30
 		},
 
 		sinceId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		untilId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
-	}
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'Blocking',
+		}
+	},
 };
 
-export default define(meta, (ps, me) => new Promise(async (res, rej) => {
-	// Check if both of sinceId and untilId is specified
-	if (ps.sinceId && ps.untilId) {
-		return rej('cannot set sinceId and untilId');
-	}
+export default define(meta, async (ps, me) => {
+	const query = makePaginationQuery(Blockings.createQueryBuilder('blocking'), ps.sinceId, ps.untilId)
+		.andWhere(`blocking.blockerId = :meId`, { meId: me.id });
 
-	const query = {
-		blockerId: me._id
-	} as any;
+	const blockings = await query
+		.take(ps.limit!)
+		.getMany();
 
-	const sort = {
-		_id: -1
-	};
-
-	if (ps.sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: ps.sinceId
-		};
-	} else if (ps.untilId) {
-		query._id = {
-			$lt: ps.untilId
-		};
-	}
-
-	const blockings = await Blocking
-		.find(query, {
-			limit: ps.limit,
-			sort: sort
-		});
-
-	res(await packMany(blockings, me));
-}));
+	return await Blockings.packMany(blockings, me);
+});

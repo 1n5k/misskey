@@ -1,6 +1,8 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../misc/cafy-id';
-import Favorite, { packMany } from '../../../../models/favorite';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
 import define from '../../define';
+import { NoteFavorites } from '../../../../models';
+import { makePaginationQuery } from '../../common/make-pagination-query';
 
 export const meta = {
 	desc: {
@@ -8,59 +10,46 @@ export const meta = {
 		'en-US': 'Get favorited notes'
 	},
 
+	tags: ['account', 'notes', 'favorites'],
+
 	requireCredential: true,
 
-	kind: 'favorites-read',
+	kind: 'read:favorites',
 
 	params: {
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 10
 		},
 
 		sinceId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		untilId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
+		},
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'NoteFavorite',
 		}
-	}
+	},
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	// Check if both of sinceId and untilId is specified
-	if (ps.sinceId && ps.untilId) {
-		return rej('cannot set sinceId and untilId');
-	}
+export default define(meta, async (ps, user) => {
+	const query = makePaginationQuery(NoteFavorites.createQueryBuilder('favorite'), ps.sinceId, ps.untilId)
+		.andWhere(`favorite.userId = :meId`, { meId: user.id })
+		.leftJoinAndSelect('favorite.note', 'note');
 
-	const query = {
-		userId: user._id
-	} as any;
+	const favorites = await query
+		.take(ps.limit!)
+		.getMany();
 
-	const sort = {
-		_id: -1
-	};
-
-	if (ps.sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: ps.sinceId
-		};
-	} else if (ps.untilId) {
-		query._id = {
-			$lt: ps.untilId
-		};
-	}
-
-	// Get favorites
-	const favorites = await Favorite
-		.find(query, {
-			limit: ps.limit,
-			sort: sort
-		});
-
-	res(await packMany(favorites, user));
-}));
+	return await NoteFavorites.packMany(favorites, user);
+});

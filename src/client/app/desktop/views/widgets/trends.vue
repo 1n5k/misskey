@@ -1,18 +1,18 @@
 <template>
 <div class="mkw-trends">
-	<mk-widget-container :show-header="!props.compact">
-		<template slot="header"><fa icon="fire"/>{{ $t('title') }}</template>
-		<button slot="func" :title="$t('title')" @click="fetch"><fa icon="sync"/></button>
+	<ui-container :show-header="!props.compact">
+		<template #header><fa icon="fire"/>{{ $t('title') }}</template>
+		<template #func><button :title="$t('title')" @click="fetch"><fa icon="sync"/></button></template>
 
 		<div class="mkw-trends--body">
-			<p class="fetching" v-if="fetching"><fa icon="spinner .pulse" fixed-width/>{{ $t('@.loading') }}<mk-ellipsis/></p>
+			<p class="fetching" v-if="fetching"><fa icon="spinner" pulse fixed-width/>{{ $t('@.loading') }}<mk-ellipsis/></p>
 			<div class="note" v-else-if="note != null">
 				<p class="text"><router-link :to="note | notePage">{{ note.text }}</router-link></p>
 				<p class="author">―<router-link :to="note.user | userPage">@{{ note.user | acct }}</router-link></p>
 			</div>
 			<p class="empty" v-else>{{ $t('nothing') }}</p>
 		</div>
-	</mk-widget-container>
+	</ui-container>
 </div>
 </template>
 
@@ -89,13 +89,13 @@ export default define({
 			margin 0
 			padding 16px
 			text-align center
-			color #aaa
+			color var(--text)
 
 		> .fetching
 			margin 0
 			padding 16px
 			text-align center
-			color #aaa
+			color var(--text)
 
 			> [data-icon]
 				margin-right 4px

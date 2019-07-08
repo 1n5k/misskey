@@ -1,8 +1,10 @@
 import $ from 'cafy';
-import App, { pack } from '../../../../models/app';
 import define from '../../define';
+import { Apps } from '../../../../models';
 
 export const meta = {
+	tags: ['account', 'app'],
+
 	desc: {
 		'ja-JP': '自分のアプリケーション一覧を取得します。',
 		'en-US': 'Get my apps'
@@ -12,34 +14,29 @@ export const meta = {
 
 	params: {
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 10
 		},
 
 		offset: {
-			validator: $.num.optional.min(0),
+			validator: $.optional.num.min(0),
 			default: 0
 		}
 	}
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
+export default define(meta, async (ps, user) => {
 	const query = {
-		userId: user._id
+		userId: user.id
 	};
 
-	// Execute query
-	const apps = await App
-		.find(query, {
-			limit: ps.limit,
-			skip: ps.offset,
-			sort: {
-				_id: -1
-			}
-		});
+	const apps = await Apps.find({
+		where: query,
+		take: ps.limit!,
+		skip: ps.offset,
+	});
 
-	// Reply
-	res(await Promise.all(apps.map(app => pack(app, user, {
+	return await Promise.all(apps.map(app => Apps.pack(app, user, {
 		detail: true
-	}))));
-}));
+	})));
+});

@@ -1,6 +1,8 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../misc/cafy-id';
-import DriveFile, { packMany } from '../../../../models/drive-file';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
 import define from '../../define';
+import { DriveFiles } from '../../../../models';
+import { makePaginationQuery } from '../../common/make-pagination-query';
 
 export const meta = {
 	desc: {
@@ -8,74 +10,66 @@ export const meta = {
 		'en-US': 'Get files of drive.'
 	},
 
+	tags: ['drive'],
+
 	requireCredential: true,
 
-	kind: 'drive-read',
+	kind: 'read:drive',
 
 	params: {
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 10
 		},
 
 		sinceId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		untilId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		folderId: {
-			validator: $.type(ID).optional.nullable,
+			validator: $.optional.nullable.type(ID),
 			default: null as any,
-			transform: transform,
 		},
 
 		type: {
-			validator: $.str.optional.match(/^[a-zA-Z\/\-\*]+$/)
+			validator: $.optional.str.match(/^[a-zA-Z\/\-*]+$/)
 		}
-	}
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'DriveFile',
+		}
+	},
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	// Check if both of sinceId and untilId is specified
-	if (ps.sinceId && ps.untilId) {
-		return rej('cannot set sinceId and untilId');
-	}
+export default define(meta, async (ps, user) => {
+	const query = makePaginationQuery(DriveFiles.createQueryBuilder('file'), ps.sinceId, ps.untilId)
+		.andWhere('file.userId = :userId', { userId: user.id });
 
-	const sort = {
-		_id: -1
-	};
-
-	const query = {
-		'metadata.userId': user._id,
-		'metadata.folderId': ps.folderId,
-		'metadata.deletedAt': { $exists: false }
-	} as any;
-
-	if (ps.sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: ps.sinceId
-		};
-	} else if (ps.untilId) {
-		query._id = {
-			$lt: ps.untilId
-		};
+	if (ps.folderId) {
+		query.andWhere('file.folderId = :folderId', { folderId: ps.folderId });
+	} else {
+		query.andWhere('file.folderId IS NULL');
 	}
 
 	if (ps.type) {
-		query.contentType = new RegExp(`^${ps.type.replace(/\*/g, '.+?')}$`);
+		if (ps.type.endsWith('/*')) {
+			query.andWhere('file.type like :type', { type: ps.type.replace('/*', '/') + '%' });
+		} else {
+			query.andWhere('file.type = :type', { type: ps.type });
+		}
 	}
 
-	const files = await DriveFile
-		.find(query, {
-			limit: ps.limit,
-			sort: sort
-		});
+	const files = await query.take(ps.limit!).getMany();
 
-	res(await packMany(files));
-}));
+	return await DriveFiles.packMany(files, { detail: false, self: true });
+});

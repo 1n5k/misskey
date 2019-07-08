@@ -1,6 +1,6 @@
 import Vue from 'vue';
 
-export default function<T extends object>(data: {
+export default function <T extends object>(data: {
 	name: string;
 	props?: () => T;
 }) {
@@ -8,6 +8,10 @@ export default function<T extends object>(data: {
 		props: {
 			widget: {
 				type: Object
+			},
+			column: {
+				type: Object,
+				default: null
 			},
 			platform: {
 				type: String,
@@ -41,35 +45,25 @@ export default function<T extends object>(data: {
 			this.$watch('props', () => {
 				this.mergeProps();
 			});
-
-			this.bakeProps();
 		},
 
 		methods: {
-			bakeProps() {
-				this.bakedOldProps = JSON.stringify(this.props);
-			},
-
 			mergeProps() {
 				if (data.props) {
 					const defaultProps = data.props();
-					Object.keys(defaultProps).forEach(prop => {
-						if (!this.props.hasOwnProperty(prop)) {
-							Vue.set(this.props, prop, defaultProps[prop]);
-						}
-					});
+					for (const prop of Object.keys(defaultProps)) {
+						if (this.props.hasOwnProperty(prop)) continue;
+						Vue.set(this.props, prop, defaultProps[prop]);
+					}
 				}
 			},
 
 			save() {
-				if (this.bakedOldProps == JSON.stringify(this.props)) return;
-
-				this.bakeProps();
-
-				(this as any).api('i/update_widget', {
-					id: this.id,
-					data: this.props
-				});
+				if (this.platform == 'deck') {
+					this.$store.commit('updateDeckColumn', this.column);
+				} else {
+					this.$store.commit('updateWidget', this.widget);
+				}
 			}
 		}
 	});

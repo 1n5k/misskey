@@ -13,8 +13,8 @@
 		<div class="body">
 			<div class="main block">
 				<div>
-					<h1 v-if="name != 'Misskey'">{{ name }}</h1>
-					<h1 v-else><img svg-inline src="../../../../assets/title.svg" :alt="name"></h1>
+					<h1 v-if="name != null && name != ''">{{ name }}</h1>
+					<h1 v-else><img svg-inline src="../../../../assets/title.svg" alt="Misskey"></h1>
 
 					<div class="info">
 						<span><b>{{ host }}</b> - <span v-html="$t('powered-by-misskey')"></span></span>
@@ -30,12 +30,12 @@
 					</div>
 
 					<p class="sign">
-						<span class="signup" @click="signup">{{ $t('signup') }}</span>
+						<span class="signup" @click="signup">{{ $t('@.signup') }}</span>
 						<span class="divider">|</span>
-						<span class="signin" @click="signin">{{ $t('signin') }}</span>
+						<span class="signin" @click="signin">{{ $t('@.signin') }}</span>
 					</p>
 
-					<img src="/assets/ai.png" alt="" title="藍" class="char">
+					<img v-if="meta" :src="meta.mascotImageUrl" alt="" title="藍" class="char">
 				</div>
 			</div>
 
@@ -44,13 +44,14 @@
 				<div v-if="announcements && announcements.length > 0">
 					<div v-for="announcement in announcements">
 						<h1 v-html="announcement.title"></h1>
-						<div v-html="announcement.text"></div>
+						<mfm :text="announcement.text"/>
+						<img v-if="announcement.image" :src="announcement.image" alt="" style="display: block; max-height: 130px; max-width: 100%;"/>
 					</div>
 				</div>
 			</div>
 
 			<div class="photos block">
-				<header><fa icon="images"/> {{ $t('photos') }}</header>
+				<header><fa :icon="['far', 'images']"/> {{ $t('photos') }}</header>
 				<div>
 					<div v-for="photo in photos" :style="`background-image: url(${photo.thumbnailUrl})`"></div>
 				</div>
@@ -87,7 +88,7 @@
 					<div>
 						<div v-if="meta" class="body">
 							<p>Version: <b>{{ meta.version }}</b></p>
-							<p>Maintainer: <b><a :href="'mailto:' + meta.maintainer.email" target="_blank">{{ meta.maintainer.name }}</a></b></p>
+							<p>Maintainer: <b><a :href="'mailto:' + meta.maintainerEmail" target="_blank">{{ meta.maintainerName }}</a></b></p>
 						</div>
 					</div>
 				</div>
@@ -135,12 +136,12 @@
 	</modal>
 
 	<modal name="signup" class="modal" width="450px" height="auto" scrollable>
-		<header class="formHeader">{{ $t('signup') }}</header>
+		<header class="formHeader">{{ $t('@.signup') }}</header>
 		<mk-signup class="form"/>
 	</modal>
 
 	<modal name="signin" class="modal" width="450px" height="auto" scrollable>
-		<header class="formHeader">{{ $t('signin') }}</header>
+		<header class="formHeader">{{ $t('@.signin') }}</header>
 		<mk-signin class="form"/>
 	</modal>
 </div>
@@ -151,6 +152,7 @@ import Vue from 'vue';
 import i18n from '../../../i18n';
 import { host, copyright } from '../../../config';
 import { concat } from '../../../../../prelude/array';
+import { toUnicode } from 'punycode';
 
 export default Vue.extend({
 	i18n: i18n('desktop/views/pages/welcome.vue'),
@@ -160,8 +162,8 @@ export default Vue.extend({
 			stats: null,
 			banner: null,
 			copyright,
-			host,
-			name: 'Misskey',
+			host: toUnicode(host),
+			name: null,
 			description: '',
 			announcements: [],
 			photos: []
@@ -173,7 +175,7 @@ export default Vue.extend({
 			this.meta = meta;
 			this.name = meta.name;
 			this.description = meta.description;
-			this.announcements = meta.broadcasts;
+			this.announcements = meta.announcements;
 			this.banner = meta.bannerUrl;
 		});
 
@@ -184,7 +186,9 @@ export default Vue.extend({
 		const image = [
 			'image/jpeg',
 			'image/png',
-			'image/gif'
+			'image/gif',
+			'image/apng',
+			'image/vnd.mozilla.apng',
 		];
 
 		this.$root.api('notes/local-timeline', {
@@ -343,8 +347,6 @@ export default Vue.extend({
 		.block
 			color var(--text)
 			background var(--face)
-			box-shadow var(--shadow)
-			//border-radius 8px
 			overflow auto
 
 			> header
@@ -352,7 +354,7 @@ export default Vue.extend({
 				padding 0 16px
 				line-height 48px
 				background var(--faceHeader)
-				box-shadow 0 1px 0px rgba(0, 0, 0, 0.1)
+				box-shadow 0 1px 0 rgba(0, 0, 0, 0.1)
 
 				& + div
 					max-height calc(100% - 48px)
@@ -370,7 +372,6 @@ export default Vue.extend({
 			> .main
 				grid-row 1
 				grid-column 1 / 3
-				border-top solid 5px var(--primary)
 
 				> div
 					padding 32px

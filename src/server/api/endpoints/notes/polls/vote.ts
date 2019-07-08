@@ -1,11 +1,20 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../../misc/cafy-id';
-import Vote from '../../../../../models/poll-vote';
-import Note from '../../../../../models/note';
-import Watching from '../../../../../models/note-watching';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
 import watch from '../../../../../services/note/watch';
-import { publishNoteStream } from '../../../../../stream';
-import notify from '../../../../../notify';
+import { publishNoteStream } from '../../../../../services/stream';
+import { createNotification } from '../../../../../services/create-notification';
 import define from '../../../define';
+import { ApiError } from '../../../error';
+import { getNote } from '../../../common/getters';
+import { deliver } from '../../../../../queue';
+import { renderActivity } from '../../../../../remote/activitypub/renderer';
+import renderVote from '../../../../../remote/activitypub/renderer/vote';
+import { deliverQuestionUpdate } from '../../../../../services/note/polls/update';
+import { PollVotes, NoteWatchings, Users, Polls, UserProfiles } from '../../../../../models';
+import { Not } from 'typeorm';
+import { IRemoteUser } from '../../../../../models/entities/user';
+import { genId } from '../../../../../misc/gen-id';
+import { ensure } from '../../../../../prelude/ensure';
 
 export const meta = {
 	desc: {
@@ -13,14 +22,15 @@ export const meta = {
 		'en-US': 'Vote poll of a note.'
 	},
 
+	tags: ['notes'],
+
 	requireCredential: true,
 
-	kind: 'vote-write',
+	kind: 'write:votes',
 
 	params: {
 		noteId: {
 			validator: $.type(ID),
-			transform: transform,
 			desc: {
 				'ja-JP': '対象の投稿のID',
 				'en-US': 'Target note ID'
@@ -30,88 +40,130 @@ export const meta = {
 		choice: {
 			validator: $.num
 		},
+	},
+
+	errors: {
+		noSuchNote: {
+			message: 'No such note.',
+			code: 'NO_SUCH_NOTE',
+			id: 'ecafbd2e-c283-4d6d-aecb-1a0a33b75396'
+		},
+
+		noPoll: {
+			message: 'The note does not attach a poll.',
+			code: 'NO_POLL',
+			id: '5f979967-52d9-4314-a911-1c673727f92f'
+		},
+
+		invalidChoice: {
+			message: 'Choice ID is invalid.',
+			code: 'INVALID_CHOICE',
+			id: 'e0cc9a04-f2e8-41e4-a5f1-4127293260cc'
+		},
+
+		alreadyVoted: {
+			message: 'You have already voted.',
+			code: 'ALREADY_VOTED',
+			id: '0963fc77-efac-419b-9424-b391608dc6d8'
+		},
+
+		alreadyExpired: {
+			message: 'The poll is already expired.',
+			code: 'ALREADY_EXPIRED',
+			id: '1022a357-b085-4054-9083-8f8de358337e'
+		},
 	}
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
+export default define(meta, async (ps, user) => {
+	const createdAt = new Date();
+
 	// Get votee
-	const note = await Note.findOne({
-		_id: ps.noteId
+	const note = await getNote(ps.noteId).catch(e => {
+		if (e.id === '9725d0ce-ba28-4dde-95a7-2cbb2c15de24') throw new ApiError(meta.errors.noSuchNote);
+		throw e;
 	});
 
-	if (note === null) {
-		return rej('note not found');
+	if (!note.hasPoll) {
+		throw new ApiError(meta.errors.noPoll);
 	}
 
-	if (note.poll == null) {
-		return rej('poll not found');
+	const poll = await Polls.findOne({ noteId: note.id }).then(ensure);
+
+	if (poll.expiresAt && poll.expiresAt < createdAt) {
+		throw new ApiError(meta.errors.alreadyExpired);
 	}
 
-	if (!note.poll.choices.some(x => x.id == ps.choice)) return rej('invalid choice param');
+	if (poll.choices[ps.choice] == null) {
+		throw new ApiError(meta.errors.invalidChoice);
+	}
 
 	// if already voted
-	const exist = await Vote.findOne({
-		noteId: note._id,
-		userId: user._id
+	const exist = await PollVotes.find({
+		noteId: note.id,
+		userId: user.id
 	});
 
-	if (exist !== null) {
-		return rej('already voted');
+	if (exist.length) {
+		if (poll.multiple) {
+			if (exist.some(x => x.choice == ps.choice))
+				throw new ApiError(meta.errors.alreadyVoted);
+		} else {
+			throw new ApiError(meta.errors.alreadyVoted);
+		}
 	}
 
 	// Create vote
-	await Vote.insert({
-		createdAt: new Date(),
-		noteId: note._id,
-		userId: user._id,
+	const vote = await PollVotes.save({
+		id: genId(),
+		createdAt,
+		noteId: note.id,
+		userId: user.id,
 		choice: ps.choice
 	});
 
-	// Send response
-	res();
-
-	const inc: any = {};
-	inc[`poll.choices.${note.poll.choices.findIndex(c => c.id == ps.choice)}.votes`] = 1;
-
 	// Increment votes count
-	await Note.update({ _id: note._id }, {
-		$inc: inc
-	});
+	const index = ps.choice + 1; // In SQL, array index is 1 based
+	await Polls.query(`UPDATE poll SET votes[${index}] = votes[${index}] + 1 WHERE "noteId" = '${poll.noteId}'`);
 
-	publishNoteStream(note._id, 'pollVoted', {
+	publishNoteStream(note.id, 'pollVoted', {
 		choice: ps.choice,
-		userId: user._id.toHexString()
+		userId: user.id
 	});
 
 	// Notify
-	notify(note.userId, user._id, 'poll_vote', {
-		noteId: note._id,
+	createNotification(note.userId, user.id, 'pollVote', {
+		noteId: note.id,
 		choice: ps.choice
 	});
 
 	// Fetch watchers
-	Watching
-		.find({
-			noteId: note._id,
-			userId: { $ne: user._id },
-			// 削除されたドキュメントは除く
-			deletedAt: { $exists: false }
-		}, {
-			fields: {
-				userId: true
-			}
-		})
-		.then(watchers => {
-			watchers.forEach(watcher => {
-				notify(watcher.userId, user._id, 'poll_vote', {
-					noteId: note._id,
-					choice: ps.choice
-				});
+	NoteWatchings.find({
+		noteId: note.id,
+		userId: Not(user.id),
+	}).then(watchers => {
+		for (const watcher of watchers) {
+			createNotification(watcher.userId, user.id, 'pollVote', {
+				noteId: note.id,
+				choice: ps.choice
 			});
-		});
+		}
+	});
+
+	const profile = await UserProfiles.findOne(user.id).then(ensure);
 
 	// この投稿をWatchする
-	if (user.settings.autoWatch !== false) {
-		watch(user._id, note);
+	if (profile.autoWatch !== false) {
+		watch(user.id, note);
 	}
-}));
+
+	// リモート投票の場合リプライ送信
+	if (note.userHost != null) {
+		const pollOwner = await Users.findOne(note.userId).then(ensure) as IRemoteUser;
+
+		deliver(user, renderActivity(await renderVote(user, vote, note, poll, pollOwner)), pollOwner.inbox);
+	}
+
+	// リモートフォロワーにUpdate配信
+	deliverQuestionUpdate(note.id);
+});

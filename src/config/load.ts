@@ -3,11 +3,9 @@
  */
 
 import * as fs from 'fs';
-import { URL } from 'url';
 import * as yaml from 'js-yaml';
 import { Source, Mixin } from './types';
-import isUrl = require('is-url');
-const pkg = require('../../package.json');
+import * as pkg from '../../package.json';
 
 /**
  * Path of configuration directory
@@ -26,31 +24,31 @@ export default function load() {
 
 	const mixin = {} as Mixin;
 
-	// Validate URLs
-	if (!isUrl(config.url)) throw `url="${config.url}" is not a valid URL`;
+	const url = tryCreateUrl(config.url);
 
-	const url = new URL(config.url);
-	config.url = normalizeUrl(config.url);
+	config.url = url.origin;
+
+	config.port = config.port || parseInt(process.env.PORT || '', 10);
 
 	mixin.host = url.host;
 	mixin.hostname = url.hostname;
 	mixin.scheme = url.protocol.replace(/:$/, '');
-	mixin.ws_scheme = mixin.scheme.replace('http', 'ws');
-	mixin.ws_url = `${mixin.ws_scheme}://${mixin.host}`;
-	mixin.api_url = `${mixin.scheme}://${mixin.host}/api`;
-	mixin.auth_url = `${mixin.scheme}://${mixin.host}/auth`;
-	mixin.dev_url = `${mixin.scheme}://${mixin.host}/dev`;
-	mixin.docs_url = `${mixin.scheme}://${mixin.host}/docs`;
-	mixin.stats_url = `${mixin.scheme}://${mixin.host}/stats`;
-	mixin.status_url = `${mixin.scheme}://${mixin.host}/status`;
-	mixin.drive_url = `${mixin.scheme}://${mixin.host}/files`;
-	mixin.user_agent = `Misskey/${pkg.version} (${config.url})`;
+	mixin.wsScheme = mixin.scheme.replace('http', 'ws');
+	mixin.wsUrl = `${mixin.wsScheme}://${mixin.host}`;
+	mixin.apiUrl = `${mixin.scheme}://${mixin.host}/api`;
+	mixin.authUrl = `${mixin.scheme}://${mixin.host}/auth`;
+	mixin.driveUrl = `${mixin.scheme}://${mixin.host}/files`;
+	mixin.userAgent = `Misskey/${pkg.version} (${config.url})`;
 
 	if (config.autoAdmin == null) config.autoAdmin = false;
 
 	return Object.assign(config, mixin);
 }
 
-function normalizeUrl(url: string) {
-	return url.endsWith('/') ? url.substr(0, url.length - 1) : url;
+function tryCreateUrl(url: string) {
+	try {
+		return new URL(url);
+	} catch (e) {
+		throw `url="${url}" is not a valid URL.`;
+	}
 }

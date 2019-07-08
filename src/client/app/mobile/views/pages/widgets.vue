@@ -1,7 +1,7 @@
 <template>
 <mk-ui>
-	<span slot="header"><span style="margin-right:4px;"><fa icon="home"/></span>{{ $t('dashboard') }}</span>
-	<template slot="func">
+	<template #header><span style="margin-right:4px;"><fa icon="home"/></span>{{ $t('dashboard') }}</template>
+	<template #func>
 		<button @click="customizing = !customizing"><fa icon="cog"/></button>
 	</template>
 	<main>
@@ -19,8 +19,8 @@
 					<option value="posts-monitor">{{ $t('@.widgets.posts-monitor') }}</option>
 					<option value="version">{{ $t('@.widgets.version') }}</option>
 					<option value="server">{{ $t('@.widgets.server') }}</option>
+					<option value="queue">{{ $t('@.widgets.queue') }}</option>
 					<option value="memo">{{ $t('@.widgets.memo') }}</option>
-					<option value="donation">{{ $t('@.widgets.donation') }}</option>
 					<option value="nav">{{ $t('@.widgets.nav') }}</option>
 					<option value="tips">{{ $t('@.widgets.tips') }}</option>
 				</select>
@@ -29,7 +29,8 @@
 			</header>
 			<x-draggable
 				:list="widgets"
-				:options="{ handle: '.handle', animation: 150 }"
+				handle=".handle"
+				animation="150"
 				@sort="onWidgetSort"
 			>
 				<div v-for="widget in widgets" class="customize-container" :key="widget.id">
@@ -71,13 +72,13 @@ export default Vue.extend({
 
 	computed: {
 		widgets(): any[] {
-			return this.$store.state.settings.mobileHome;
+			return this.$store.getters.mobileHome || [];
 		}
 	},
 
 	created() {
 		if (this.widgets.length == 0) {
-			this.widgets = [{
+			this.$store.commit('setMobileHome', [{
 				name: 'calendar',
 				id: 'a', data: {}
 			}, {
@@ -90,17 +91,19 @@ export default Vue.extend({
 				name: 'photo-stream',
 				id: 'd', data: {}
 			}, {
-				name: 'donation',
-				id: 'e', data: {}
-			}, {
 				name: 'nav',
 				id: 'f', data: {}
 			}, {
 				name: 'version',
 				id: 'g', data: {}
-			}];
-			this.saveHome();
+			}]);
 		}
+
+		this.$watch('$store.getters.mobileHome', () => {
+			this.$store.dispatch('settings/updateMobileHomeProfile');
+		}, {
+			deep: true
+		});
 	},
 
 	mounted() {
@@ -109,7 +112,10 @@ export default Vue.extend({
 
 	methods: {
 		hint() {
-			alert(this.$t('widgets-hints'));
+			this.$root.dialog({
+				type: 'info',
+				text: this.$t('widgets-hints')
+			});
 		},
 
 		widgetFunc(id) {
@@ -122,7 +128,7 @@ export default Vue.extend({
 		},
 
 		addWidget() {
-			this.$store.dispatch('settings/addMobileHomeWidget', {
+			this.$store.commit('addMobileHomeWidget', {
 				name: this.widgetAdderSelected,
 				id: uuid(),
 				data: {}
@@ -130,14 +136,11 @@ export default Vue.extend({
 		},
 
 		removeWidget(widget) {
-			this.$store.dispatch('settings/removeMobileHomeWidget', widget);
+			this.$store.commit('removeMobileHomeWidget', widget);
 		},
 
 		saveHome() {
-			this.$store.commit('settings/setMobileHome', this.widgets);
-			this.$root.api('i/update_mobile_home', {
-				home: this.widgets
-			});
+			this.$store.commit('setMobileHome', this.widgets);
 		}
 	}
 });

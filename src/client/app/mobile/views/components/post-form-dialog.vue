@@ -2,9 +2,10 @@
 <div class="ulveipglmagnxfgvitaxyszerjwiqmwl">
 	<div class="bg" ref="bg"></div>
 	<div class="main" ref="main">
-		<mk-post-form ref="form"
+		<x-post-form ref="form"
 			:reply="reply"
 			:renote="renote"
+			:mention="mention"
 			:initial-text="initialText"
 			:instant="instant"
 			@posted="onPosted"
@@ -15,15 +16,24 @@
 
 <script lang="ts">
 import Vue from 'vue';
-import * as anime from 'animejs';
+import anime from 'animejs';
+import XPostForm from './post-form.vue';
 
 export default Vue.extend({
+	components: {
+		XPostForm
+	},
+
 	props: {
 		reply: {
 			type: Object,
 			required: false
 		},
 		renote: {
+			type: Object,
+			required: false
+		},
+		mention: {
 			type: Object,
 			required: false
 		},

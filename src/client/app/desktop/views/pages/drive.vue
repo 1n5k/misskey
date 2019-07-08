@@ -1,6 +1,6 @@
 <template>
 <div class="mk-drive-page">
-	<mk-drive :init-folder="folder" @move-root="onMoveRoot" @open-folder="onOpenFolder"/>
+	<x-drive :init-folder="folder" @move-root="onMoveRoot" @open-folder="onOpenFolder"/>
 </div>
 </template>
 
@@ -10,6 +10,9 @@ import i18n from '../../../i18n';
 
 export default Vue.extend({
 	i18n: i18n('desktop/views/pages/drive.vue'),
+	components: {
+		XDrive: () => import('../components/drive.vue').then(m => m.default),
+	},
 	data() {
 		return {
 			folder: null
@@ -31,7 +34,7 @@ export default Vue.extend({
 			document.title = title;
 		},
 		onOpenFolder(folder) {
-			const title = folder.name + ' | %i18n:@title%';
+			const title = `${folder.name} | ${this.$t('title')}`;
 
 			// Rewrite URL
 			history.pushState(null, title, `/i/drive/folder/${folder.id}`);

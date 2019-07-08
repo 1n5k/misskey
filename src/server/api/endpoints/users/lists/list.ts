@@ -1,21 +1,32 @@
-import UserList, { pack } from '../../../../../models/user-list';
 import define from '../../../define';
+import { UserLists } from '../../../../../models';
 
 export const meta = {
 	desc: {
 		'ja-JP': '自分の作成したユーザーリスト一覧を取得します。'
 	},
 
+	tags: ['lists', 'account'],
+
 	requireCredential: true,
 
-	kind: 'account-read'
+	kind: 'read:account',
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'UserList',
+		}
+	},
 };
 
-export default define(meta, (ps, me) => new Promise(async (res, rej) => {
-	// Fetch lists
-	const userLists = await UserList.find({
-		userId: me._id,
+export default define(meta, async (ps, me) => {
+	const userLists = await UserLists.find({
+		userId: me.id,
 	});
 
-	res(await Promise.all(userLists.map(x => pack(x))));
-}));
+	return await Promise.all(userLists.map(x => UserLists.pack(x)));
+});

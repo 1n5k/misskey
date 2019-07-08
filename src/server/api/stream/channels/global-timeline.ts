@@ -1,35 +1,45 @@
 import autobind from 'autobind-decorator';
-import Mute from '../../../../models/mute';
-import { pack } from '../../../../models/note';
 import shouldMuteThisNote from '../../../../misc/should-mute-this-note';
 import Channel from '../channel';
+import { fetchMeta } from '../../../../misc/fetch-meta';
+import { Notes } from '../../../../models';
+import { PackedNote } from '../../../../models/repositories/note';
 
 export default class extends Channel {
 	public readonly chName = 'globalTimeline';
 	public static shouldShare = true;
-
-	private mutedUserIds: string[] = [];
+	public static requireCredential = false;
 
 	@autobind
 	public async init(params: any) {
-		// Subscribe events
-		this.subscriber.on('globalTimeline', this.onNote);
+		const meta = await fetchMeta();
+		if (meta.disableGlobalTimeline) {
+			if (this.user == null || (!this.user.isAdmin && !this.user.isModerator)) return;
+		}
 
-		const mute = await Mute.find({ muterId: this.user._id });
-		this.mutedUserIds = mute.map(m => m.muteeId.toString());
+		// Subscribe events
+		this.subscriber.on('notesStream', this.onNote);
 	}
 
 	@autobind
-	private async onNote(note: any) {
+	private async onNote(note: PackedNote) {
+		if (note.visibility !== 'public') return;
+
+		// リプライなら再pack
+		if (note.replyId != null) {
+			note.reply = await Notes.pack(note.replyId, this.user, {
+				detail: true
+			});
+		}
 		// Renoteなら再pack
 		if (note.renoteId != null) {
-			note.renote = await pack(note.renoteId, this.user, {
+			note.renote = await Notes.pack(note.renoteId, this.user, {
 				detail: true
 			});
 		}
 
 		// 流れてきたNoteがミュートしているユーザーが関わるものだったら無視する
-		if (shouldMuteThisNote(note, this.mutedUserIds)) return;
+		if (shouldMuteThisNote(note, this.muting)) return;
 
 		this.send('note', note);
 	}
@@ -37,6 +47,6 @@ export default class extends Channel {
 	@autobind
 	public dispose() {
 		// Unsubscribe events
-		this.subscriber.off('globalTimeline', this.onNote);
+		this.subscriber.off('notesStream', this.onNote);
 	}
 }

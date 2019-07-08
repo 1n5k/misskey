@@ -1,7 +1,7 @@
 import $ from 'cafy';
-import ID, { transform } from '../../../../misc/cafy-id';
+import { ID } from '../../../../misc/cafy-id';
 import define from '../../define';
-import User from '../../../../models/user';
+import { Users } from '../../../../models';
 
 export const meta = {
 	desc: {
@@ -9,13 +9,14 @@ export const meta = {
 		'en-US': 'Unsuspend a user.'
 	},
 
+	tags: ['admin'],
+
 	requireCredential: true,
-	requireAdmin: true,
+	requireModerator: true,
 
 	params: {
 		userId: {
 			validator: $.type(ID),
-			transform: transform,
 			desc: {
 				'ja-JP': '対象のユーザーID',
 				'en-US': 'The user ID which you want to unsuspend'
@@ -24,22 +25,14 @@ export const meta = {
 	}
 };
 
-export default define(meta, (ps) => new Promise(async (res, rej) => {
-	const user = await User.findOne({
-		_id: ps.userId
-	});
+export default define(meta, async (ps) => {
+	const user = await Users.findOne(ps.userId as string);
 
 	if (user == null) {
-		return rej('user not found');
+		throw new Error('user not found');
 	}
 
-	await User.findOneAndUpdate({
-		_id: user._id
-	}, {
-			$set: {
-				isSuspended: false
-			}
-		});
-
-	res();
-}));
+	await Users.update(user.id, {
+		isSuspended: false
+	});
+});

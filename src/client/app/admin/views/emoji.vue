@@ -1,20 +1,20 @@
 <template>
-<div class="tumhkfkmgtvzljezfvmgkeurkfncshbe">
+<div>
 	<ui-card>
-		<div slot="title"><fa icon="plus"/> {{ $t('add-emoji.title') }}</div>
+		<template #title><fa icon="plus"/> {{ $t('add-emoji.title') }}</template>
 		<section class="fit-top">
 			<ui-horizon-group inputs>
 				<ui-input v-model="name">
 					<span>{{ $t('add-emoji.name') }}</span>
-					<span slot="desc">{{ $t('add-emoji.name-desc') }}</span>
+					<template #desc>{{ $t('add-emoji.name-desc') }}</template>
 				</ui-input>
 				<ui-input v-model="aliases">
 					<span>{{ $t('add-emoji.aliases') }}</span>
-					<span slot="desc">{{ $t('add-emoji.aliases-desc') }}</span>
+					<template #desc>{{ $t('add-emoji.aliases-desc') }}</template>
 				</ui-input>
 			</ui-horizon-group>
 			<ui-input v-model="url">
-				<i slot="icon"><fa icon="link"/></i>
+				<template #icon><fa icon="link"/></template>
 				<span>{{ $t('add-emoji.url') }}</span>
 			</ui-input>
 			<ui-info>{{ $t('add-emoji.info') }}</ui-info>
@@ -23,25 +23,29 @@
 	</ui-card>
 
 	<ui-card>
-		<div slot="title"><fa :icon="['far', 'grin']"/> {{ $t('emojis.title') }}</div>
-		<section v-for="emoji in emojis">
-			<img :src="emoji.url" :alt="emoji.name" style="width: 64px;"/>
-			<ui-horizon-group inputs>
-				<ui-input v-model="emoji.name">
-					<span>{{ $t('add-emoji.name') }}</span>
+		<template #title><fa :icon="faGrin"/> {{ $t('emojis.title') }}</template>
+		<section v-for="emoji in emojis" class="oryfrbft">
+			<div>
+				<img :src="emoji.url" :alt="emoji.name" style="width: 64px;"/>
+			</div>
+			<div>
+				<ui-horizon-group>
+					<ui-input v-model="emoji.name">
+						<span>{{ $t('add-emoji.name') }}</span>
+					</ui-input>
+					<ui-input v-model="emoji.aliases">
+						<span>{{ $t('add-emoji.aliases') }}</span>
+					</ui-input>
+				</ui-horizon-group>
+				<ui-input v-model="emoji.url">
+					<template #icon><fa icon="link"/></template>
+					<span>{{ $t('add-emoji.url') }}</span>
 				</ui-input>
-				<ui-input v-model="emoji.aliases">
-					<span>{{ $t('add-emoji.aliases') }}</span>
-				</ui-input>
-			</ui-horizon-group>
-			<ui-input v-model="emoji.url">
-				<i slot="icon"><fa icon="link"/></i>
-				<span>{{ $t('add-emoji.url') }}</span>
-			</ui-input>
-			<ui-horizon-group>
-				<ui-button @click="updateEmoji(emoji)"><fa :icon="['far', 'save']"/> {{ $t('emojis.update') }}</ui-button>
-				<ui-button @click="removeEmoji(emoji)"><fa :icon="['far', 'trash-alt']"/> {{ $t('emojis.remove') }}</ui-button>
-			</ui-horizon-group>
+				<ui-horizon-group class="fit-bottom">
+					<ui-button @click="updateEmoji(emoji)"><fa :icon="['far', 'save']"/> {{ $t('emojis.update') }}</ui-button>
+					<ui-button @click="removeEmoji(emoji)"><fa :icon="['far', 'trash-alt']"/> {{ $t('emojis.remove') }}</ui-button>
+				</ui-horizon-group>
+			</div>
 		</section>
 	</ui-card>
 </div>
@@ -50,6 +54,7 @@
 <script lang="ts">
 import Vue from 'vue';
 import i18n from '../../i18n';
+import { faGrin } from '@fortawesome/free-regular-svg-icons';
 
 export default Vue.extend({
 	i18n: i18n('admin/views/emoji.vue'),
@@ -58,7 +63,8 @@ export default Vue.extend({
 			name: '',
 			url: '',
 			aliases: '',
-			emojis: []
+			emojis: [],
+			faGrin
 		};
 	},
 
@@ -73,13 +79,13 @@ export default Vue.extend({
 				url: this.url,
 				aliases: this.aliases.split(' ').filter(x => x.length > 0)
 			}).then(() => {
-				this.$swal({
+				this.$root.dialog({
 					type: 'success',
 					text: this.$t('add-emoji.added')
 				});
 				this.fetchEmojis();
 			}).catch(e => {
-				this.$swal({
+				this.$root.dialog({
 					type: 'error',
 					text: e
 				});
@@ -89,7 +95,9 @@ export default Vue.extend({
 		fetchEmojis() {
 			this.$root.api('admin/emoji/list').then(emojis => {
 				emojis.reverse();
-				emojis.forEach(e => e.aliases = (e.aliases || []).join(' '));
+				for (const e of emojis) {
+					e.aliases = (e.aliases || []).join(' ');
+				}
 				this.emojis = emojis;
 			});
 		},
@@ -101,12 +109,12 @@ export default Vue.extend({
 				url: emoji.url,
 				aliases: emoji.aliases.split(' ').filter(x => x.length > 0)
 			}).then(() => {
-				this.$swal({
+				this.$root.dialog({
 					type: 'success',
 					text: this.$t('updated')
 				});
 			}).catch(e => {
-				this.$swal({
+				this.$root.dialog({
 					type: 'error',
 					text: e
 				});
@@ -114,23 +122,23 @@ export default Vue.extend({
 		},
 
 		removeEmoji(emoji) {
-			this.$swal({
+			this.$root.dialog({
 				type: 'warning',
 				text: this.$t('remove-emoji.are-you-sure').replace('$1', emoji.name),
 				showCancelButton: true
-			}).then(res => {
-				if (!res.value) return;
+			}).then(({ canceled }) => {
+				if (canceled) return;
 
 				this.$root.api('admin/emoji/remove', {
 					id: emoji.id
 				}).then(() => {
-					this.$swal({
+					this.$root.dialog({
 						type: 'success',
 						text: this.$t('remove-emoji.removed')
 					});
 					this.fetchEmojis();
 				}).catch(e => {
-					this.$swal({
+					this.$root.dialog({
 						type: 'error',
 						text: e
 					});
@@ -142,8 +150,21 @@ export default Vue.extend({
 </script>
 
 <style lang="stylus" scoped>
-.tumhkfkmgtvzljezfvmgkeurkfncshbe
+.oryfrbft
 	@media (min-width 500px)
-		padding 16px
+		display flex
+
+	> div:first-child
+		@media (max-width 500px)
+			padding-bottom 16px
+
+		> img
+			vertical-align bottom
+
+	> div:last-child
+		flex 1
+
+		@media (min-width 500px)
+			padding-left 16px
 
 </style>

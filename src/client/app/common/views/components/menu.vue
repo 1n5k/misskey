@@ -1,7 +1,7 @@
 <template>
-<div class="onchrpzrvnoruiaenfcqvccjfuupzzwv">
+<div class="onchrpzrvnoruiaenfcqvccjfuupzzwv" :class="{ isMobile: $root.isMobile }">
 	<div class="backdrop" ref="backdrop" @click="close"></div>
-	<div class="popover" :class="{ hukidasi }" ref="popover">
+	<div class="popover" :class="{ bubble }" ref="popover">
 		<template v-for="item, i in items">
 			<div v-if="item === null"></div>
 			<button v-if="item" @click="clicked(item.action)" :tabindex="i">
@@ -14,7 +14,7 @@
 
 <script lang="ts">
 import Vue from 'vue';
-import * as anime from 'animejs';
+import anime from 'animejs';
 
 export default Vue.extend({
 	props: {
@@ -24,16 +24,11 @@ export default Vue.extend({
 		items: {
 			type: Array,
 			required: true
-		},
-		compact: {
-			type: Boolean,
-			required: false,
-			default: false
 		}
 	},
 	data() {
 		return {
-			hukidasi: !this.compact
+			bubble: !this.$root.isMobile
 		};
 	},
 	mounted() {
@@ -47,7 +42,7 @@ export default Vue.extend({
 			let left;
 			let top;
 
-			if (this.compact) {
+			if (this.$root.isMobile) {
 				const x = rect.left + window.pageXOffset + (this.source.offsetWidth / 2);
 				const y = rect.top + window.pageYOffset + (this.source.offsetHeight / 2);
 				left = (x - (width / 2));
@@ -61,12 +56,16 @@ export default Vue.extend({
 
 			if (left + width - window.pageXOffset > window.innerWidth) {
 				left = window.innerWidth - width + window.pageXOffset;
-				this.hukidasi = false;
+				this.bubble = false;
 			}
 
 			if (top + height - window.pageYOffset > window.innerHeight) {
 				top = window.innerHeight - height + window.pageYOffset;
-				this.hukidasi = false;
+				this.bubble = false;
+			}
+
+			if (top < 0) {
+				top = 0;
 			}
 
 			popover.style.left = left + 'px';
@@ -121,9 +120,13 @@ export default Vue.extend({
 <style lang="stylus" scoped>
 .onchrpzrvnoruiaenfcqvccjfuupzzwv
 	$bg-color = var(--popupBg)
-	$border-color = rgba(27, 31, 35, 0.15)
 
 	position initial
+
+	&.isMobile
+		> .popover
+			> button
+				font-size 15px
 
 	> .backdrop
 		position fixed
@@ -140,7 +143,6 @@ export default Vue.extend({
 		z-index 10001
 		padding 8px 0
 		background $bg-color
-		border 1px solid $border-color
 		border-radius 4px
 		box-shadow 0 3px 12px rgba(27, 31, 35, 0.15)
 		transform scale(0.5)
@@ -148,7 +150,7 @@ export default Vue.extend({
 
 		$balloon-size = 16px
 
-		&.hukidasi
+		&.bubble
 			margin-top $balloon-size
 			transform-origin center -($balloon-size)
 
@@ -165,14 +167,6 @@ export default Vue.extend({
 				border-top solid $balloon-size transparent
 				border-left solid $balloon-size transparent
 				border-right solid $balloon-size transparent
-				border-bottom solid $balloon-size $border-color
-
-			&:after
-				top -($balloon-size * 2) + 1.5px
-				left s('calc(50% - %s)', $balloon-size)
-				border-top solid $balloon-size transparent
-				border-left solid $balloon-size transparent
-				border-right solid $balloon-size transparent
 				border-bottom solid $balloon-size $bg-color
 
 		> button
@@ -180,6 +174,7 @@ export default Vue.extend({
 			padding 8px 16px
 			width 100%
 			color var(--popupFg)
+			white-space nowrap
 
 			&:hover
 				color var(--primaryForeground)
@@ -195,7 +190,7 @@ export default Vue.extend({
 
 		> div
 			margin 8px 0
-			height 1px
+			height var(--lineWidth)
 			background var(--faceDivider)
 
 </style>

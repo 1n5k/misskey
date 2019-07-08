@@ -1,7 +1,9 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../../misc/cafy-id';
-import Favorite from '../../../../../models/favorite';
-import Note from '../../../../../models/note';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
 import define from '../../../define';
+import { ApiError } from '../../../error';
+import { getNote } from '../../../common/getters';
+import { NoteFavorites } from '../../../../../models';
 
 export const meta = {
 	stability: 'stable',
@@ -11,47 +13,54 @@ export const meta = {
 		'en-US': 'Unfavorite a note.'
 	},
 
+	tags: ['notes', 'favorites'],
+
 	requireCredential: true,
 
-	kind: 'favorite-write',
+	kind: 'write:favorites',
 
 	params: {
 		noteId: {
 			validator: $.type(ID),
-			transform: transform,
 			desc: {
 				'ja-JP': '対象の投稿のID',
 				'en-US': 'Target note ID.'
 			}
 		}
+	},
+
+	errors: {
+		noSuchNote: {
+			message: 'No such note.',
+			code: 'NO_SUCH_NOTE',
+			id: '80848a2c-398f-4343-baa9-df1d57696c56'
+		},
+
+		notFavorited: {
+			message: 'You have not marked that note a favorite.',
+			code: 'NOT_FAVORITED',
+			id: 'b625fc69-635e-45e9-86f4-dbefbef35af5'
+		},
 	}
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
+export default define(meta, async (ps, user) => {
 	// Get favoritee
-	const note = await Note.findOne({
-		_id: ps.noteId
+	const note = await getNote(ps.noteId).catch(e => {
+		if (e.id === '9725d0ce-ba28-4dde-95a7-2cbb2c15de24') throw new ApiError(meta.errors.noSuchNote);
+		throw e;
 	});
-
-	if (note === null) {
-		return rej('note not found');
-	}
 
 	// if already favorited
-	const exist = await Favorite.findOne({
-		noteId: note._id,
-		userId: user._id
+	const exist = await NoteFavorites.findOne({
+		noteId: note.id,
+		userId: user.id
 	});
 
-	if (exist === null) {
-		return rej('already not favorited');
+	if (exist == null) {
+		throw new ApiError(meta.errors.notFavorited);
 	}
 
 	// Delete favorite
-	await Favorite.remove({
-		_id: exist._id
-	});
-
-	// Send response
-	res();
-}));
+	await NoteFavorites.delete(exist.id);
+});

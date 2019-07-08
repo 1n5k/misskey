@@ -1,15 +1,19 @@
 import $ from 'cafy';
-import Emoji from '../../../../../models/emoji';
 import define from '../../../define';
-import ID from '../../../../../misc/cafy-id';
+import { detectUrlMine } from '../../../../../misc/detect-url-mine';
+import { ID } from '../../../../../misc/cafy-id';
+import { Emojis } from '../../../../../models';
+import { getConnection } from 'typeorm';
 
 export const meta = {
 	desc: {
 		'ja-JP': 'カスタム絵文字を更新します。'
 	},
 
+	tags: ['admin'],
+
 	requireCredential: true,
-	requireAdmin: true,
+	requireModerator: true,
 
 	params: {
 		id: {
@@ -30,21 +34,20 @@ export const meta = {
 	}
 };
 
-export default define(meta, (ps) => new Promise(async (res, rej) => {
-	const emoji = await Emoji.findOne({
-		_id: ps.id
+export default define(meta, async (ps) => {
+	const emoji = await Emojis.findOne(ps.id);
+
+	if (emoji == null) throw new Error('emoji not found');
+
+	const type = await detectUrlMine(ps.url);
+
+	await Emojis.update(emoji.id, {
+		updatedAt: new Date(),
+		name: ps.name,
+		aliases: ps.aliases,
+		url: ps.url,
+		type,
 	});
 
-	if (emoji == null) return rej('emoji not found');
-
-	await Emoji.update({ _id: emoji._id }, {
-		$set: {
-			updatedAt: new Date(),
-			name: ps.name,
-			aliases: ps.aliases,
-			url: ps.url
-		}
-	});
-
-	res();
-}));
+	await getConnection().queryResultCache!.remove(['meta_emojis']);
+});

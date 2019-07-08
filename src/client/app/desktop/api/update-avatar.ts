@@ -1,26 +1,13 @@
-import { apiUrl } from '../../config';
-import CropWindow from '../views/components/crop-window.vue';
+import { apiUrl, locale } from '../../config';
 import ProgressDialog from '../views/components/progress-dialog.vue';
 
 export default ($root: any) => {
 
-	const cropImage = file => new Promise((resolve, reject) => {
-
-		const regex = RegExp('\.(jpg|jpeg|png|gif|webp|bmp|tiff)$');
-		if (!regex.test(file.name) ) {
-			$root.$dialog({
-				title: '%fa:info-circle% %i18n:desktop.invalid-filetype%',
-				text: null,
-				actions: [{
-					text: '%i18n:common.got-it%'
-				}]
-			});
-			return reject('invalid-filetype');
-		}
-
+	const cropImage = file => new Promise(async (resolve, reject) => {
+		const CropWindow = await import('../views/components/crop-window.vue').then(x => x.default);
 		const w = $root.new(CropWindow, {
 			image: file,
-			title: '%i18n:desktop.avatar-crop-title%',
+			title: locale['desktop']['avatar-crop-title'],
 			aspectRatio: 1 / 1
 		});
 
@@ -30,11 +17,11 @@ export default ($root: any) => {
 			data.append('file', blob, file.name + '.cropped.png');
 
 			$root.api('drive/folders/find', {
-				name: '%i18n:desktop.avatar%'
+				name: locale['desktop']['avatar']
 			}).then(avatarFolder => {
 				if (avatarFolder.length === 0) {
 					$root.api('drive/folders/create', {
-						name: '%i18n:desktop.avatar%'
+						name: locale['desktop']['avatar']
 					}).then(iconFolder => {
 						resolve(upload(data, iconFolder));
 					});
@@ -55,7 +42,7 @@ export default ($root: any) => {
 
 	const upload = (data, folder) => new Promise((resolve, reject) => {
 		const dialog = $root.new(ProgressDialog, {
-			title: '%i18n:desktop.uploading-avatar%'
+			title: locale['desktop']['uploading-avatar']
 		});
 		document.body.appendChild(dialog.$el);
 
@@ -90,12 +77,9 @@ export default ($root: any) => {
 				value: i.avatarUrl
 			});
 
-			$root.$dialog({
-				title: '%fa:info-circle% %i18n:desktop.avatar-updated%',
-				text: null,
-				actions: [{
-					text: '%i18n:common.got-it%'
-				}]
+			$root.dialog({
+				title: locale['desktop']['avatar-updated'],
+				text: null
 			});
 
 			return i;
@@ -107,7 +91,8 @@ export default ($root: any) => {
 			? Promise.resolve(file)
 			: $root.$chooseDriveFile({
 				multiple: false,
-				title: '%fa:image% %i18n:desktop.choose-avatar%'
+				type: 'image/*',
+				title: locale['desktop']['choose-avatar']
 			});
 
 		return selectedFile

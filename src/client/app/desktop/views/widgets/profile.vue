@@ -1,6 +1,6 @@
 <template>
 <div class="egwyvoaaryotefqhqtmiyawwefemjfsd">
-	<mk-widget-container :show-header="false" :naked="props.design == 2">
+	<ui-container :show-header="false" :naked="props.design == 2">
 		<div class="egwyvoaaryotefqhqtmiyawwefemjfsd-body"
 			:data-compact="props.design == 1 || props.design == 2"
 			:data-melt="props.design == 2"
@@ -8,23 +8,25 @@
 			<div class="banner"
 				:style="$store.state.i.bannerUrl ? `background-image: url(${$store.state.i.bannerUrl})` : ''"
 				:title="$t('update-banner')"
-				@click="() => os.apis.updateBanner()"
+				@click="updateBanner()"
 			></div>
 			<mk-avatar class="avatar" :user="$store.state.i"
 				:disable-link="true"
-				@click="() => os.apis.updateAvatar()"
+				@click="updateAvatar()"
 				:title="$t('update-avatar')"
 			/>
-			<router-link class="name" :to="$store.state.i | userPage">{{ $store.state.i | userName }}</router-link>
+			<router-link class="name" :to="$store.state.i | userPage"><mk-user-name :user="$store.state.i"/></router-link>
 			<p class="username">@{{ $store.state.i | acct }}</p>
 		</div>
-	</mk-widget-container>
+	</ui-container>
 </div>
 </template>
 
 <script lang="ts">
 import define from '../../../common/define-widget';
 import i18n from '../../../i18n';
+import updateAvatar from '../../api/update-avatar';
+import updateBanner from '../../api/update-banner';
 
 export default define({
 	name: 'profile',
@@ -41,6 +43,12 @@ export default define({
 				this.props.design++;
 			}
 			this.save();
+		},
+		updateAvatar() {
+			updateAvatar(this.$root)();
+		},
+		updateBanner() {
+			updateBanner(this.$root)();
 		}
 	}
 });

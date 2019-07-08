@@ -3,26 +3,32 @@
 	<mk-avatar class="avatar" :user="message.user" target="_blank"/>
 	<div class="content">
 		<div class="balloon" :data-no-text="message.text == null">
-			<!-- <button class="delete-button" v-if="isMe" :title="$t('@.delete')">
-				<img src="/assets/desktop/messaging/delete.png" alt="Delete"/>
-			</button> -->
+			<button class="delete-button" v-if="isMe" :title="$t('@.delete')" @click="del">
+				<img src="/assets/desktop/remove.png" alt="Delete"/>
+			</button>
 			<div class="content" v-if="!message.isDeleted">
-				<misskey-flavored-markdown class="text" v-if="message.text" ref="text" :text="message.text" :i="$store.state.i"/>
+				<mfm class="text" v-if="message.text" ref="text" :text="message.text" :i="$store.state.i"/>
 				<div class="file" v-if="message.file">
-					<a :href="message.file.url" target="_blank" :title="message.file.name">
-						<img v-if="message.file.type.split('/')[0] == 'image'" :src="message.file.url" :alt="message.file.name"/>
+					<a :href="message.file.url" rel="noopener" target="_blank" :title="message.file.name">
+						<img v-if="message.file.type.split('/')[0] == 'image'" :src="message.file.url" :alt="message.file.name"
+							:style="{ backgroundColor: message.file.properties.avgColor || 'transparent' }"/>
 						<p v-else>{{ message.file.name }}</p>
 					</a>
 				</div>
 			</div>
-			<div class="content" v-if="message.isDeleted">
+			<div class="content" v-else>
 				<p class="is-deleted">{{ $t('deleted') }}</p>
 			</div>
 		</div>
 		<div></div>
 		<mk-url-preview v-for="url in urls" :url="url" :key="url"/>
 		<footer>
-			<span class="read" v-if="isMe && message.isRead">{{ $t('is-read') }}</span>
+			<template v-if="isGroup">
+				<span class="read" v-if="message.reads.length > 0">{{ $t('is-read') }} {{ message.reads.length }}</span>
+			</template>
+			<template v-else>
+				<span class="read" v-if="isMe && message.isRead">{{ $t('is-read') }}</span>
+			</template>
 			<mk-time :time="message.createdAt"/>
 			<template v-if="message.is_edited"><fa icon="pencil-alt"/></template>
 		</footer>
@@ -33,13 +39,17 @@
 <script lang="ts">
 import Vue from 'vue';
 import i18n from '../../../i18n';
-import parse from '../../../../../mfm/parse';
+import { parse } from '../../../../../mfm/parse';
+import { unique } from '../../../../../prelude/array';
 
 export default Vue.extend({
 	i18n: i18n('common/views/components/messaging-room.message.vue'),
 	props: {
 		message: {
 			required: true
+		},
+		isGroup: {
+			required: false
 		}
 	},
 	computed: {
@@ -49,12 +59,19 @@ export default Vue.extend({
 		urls(): string[] {
 			if (this.message.text) {
 				const ast = parse(this.message.text);
-				return ast
-					.filter(t => (t.type == 'url' || t.type == 'link') && !t.silent)
-					.map(t => t.url);
+				return unique(ast
+					.filter(t => ((t.node.type == 'url' || t.node.type == 'link') && t.node.props.url && !t.node.props.silent))
+					.map(t => t.node.props.url));
 			} else {
 				return null;
 			}
+		}
+	},
+	methods: {
+		del() {
+			this.$root.api('messaging/messages/delete', {
+				messageId: this.message.id
+			});
 		}
 	}
 });
@@ -149,7 +166,6 @@ export default Vue.extend({
 					> a
 						display block
 						max-width 100%
-						max-height 512px
 						border-radius 16px
 						overflow hidden
 						text-decoration none
@@ -164,7 +180,8 @@ export default Vue.extend({
 							display block
 							margin 0
 							width 100%
-							height 100%
+							max-height 512px
+							object-fit contain
 
 						> p
 							padding 30px

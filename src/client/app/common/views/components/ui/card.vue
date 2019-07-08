@@ -1,5 +1,5 @@
 <template>
-<div class="ui-card" :class="{ shadow: $store.state.settings.useShadow }">
+<div class="ui-card" :class="{ shadow: $store.state.device.useShadow, round: $store.state.device.roundedCorners }">
 	<header>
 		<slot name="title"></slot>
 	</header>
@@ -22,9 +22,12 @@ export default Vue.extend({
 <style lang="stylus" scoped>
 .ui-card
 	margin 16px
+	max-width 850px
 	color var(--faceText)
 	background var(--face)
-	border-radius var(--round)
+
+	&.round
+		border-radius 6px
 
 	&.shadow
 		box-shadow 0 3px 1px -2px rgba(#000, 0.2), 0 2px 2px 0 rgba(#000, 0.14), 0 1px 5px 0 rgba(#000, 0.12)
@@ -40,7 +43,7 @@ export default Vue.extend({
 
 	> section
 		padding 20px 16px
-		border-top solid 1px var(--faceDivider)
+		border-top solid var(--lineWidth) var(--faceDivider)
 
 		@media (min-width 500px)
 			padding 32px
@@ -55,4 +58,12 @@ export default Vue.extend({
 			margin-bottom 16px
 			font-weight bold
 			color var(--faceText)
+
+		> section
+			margin 16px 0
+
+			> header
+				font-weight bold
+				color var(--text)
+
 </style>

@@ -1,23 +1,37 @@
 import { Context } from 'cafy';
 import * as path from 'path';
 import * as glob from 'glob';
+import { Schema } from '../../misc/schema';
+
+export type Param = {
+	validator: Context<any>;
+	transform?: any;
+	default?: any;
+	deprecated?: boolean;
+	desc?: { [key: string]: string };
+	ref?: string;
+};
 
 export interface IEndpointMeta {
 	stability?: string; //'deprecated' | 'experimental' | 'stable';
 
 	desc?: { [key: string]: string };
 
+	tags?: string[];
+
 	params?: {
+		[key: string]: Param;
+	};
+
+	errors?: {
 		[key: string]: {
-			validator: Context<any>;
-			transform?: any;
-			default?: any;
-			desc?: { [key: string]: string };
-			ref?: string;
+			message: string;
+			code: string;
+			id: string;
 		};
 	};
 
-	res?: any;
+	res?: Schema;
 
 	/**
 	 * このエンドポイントにリクエストするのにユーザー情報が必須か否か
@@ -29,6 +43,11 @@ export interface IEndpointMeta {
 	 * 管理者のみ使えるエンドポイントか否か
 	 */
 	requireAdmin?: boolean;
+
+	/**
+	 * 管理者またはモデレーターのみ使えるエンドポイントか否か
+	 */
+	requireModerator?: boolean;
 
 	/**
 	 * エンドポイントのリミテーションに関するやつ

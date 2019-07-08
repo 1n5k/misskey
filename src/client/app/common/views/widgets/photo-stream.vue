@@ -1,20 +1,26 @@
 <template>
 <div class="mkw-photo-stream" :class="$style.root" :data-melt="props.design == 2">
-	<mk-widget-container :show-header="props.design == 0" :naked="props.design == 2">
-		<template slot="header"><fa icon="camera"/>{{ $t('title') }}</template>
+	<ui-container :show-header="props.design == 0" :naked="props.design == 2">
+		<template #header><fa icon="camera"/>{{ $t('title') }}</template>
 
-		<p :class="$style.fetching" v-if="fetching"><fa icon="spinner .pulse" fixed-width/>{{ $t('@.loading') }}<mk-ellipsis/></p>
+		<p :class="$style.fetching" v-if="fetching"><fa icon="spinner" pulse fixed-width/>{{ $t('@.loading') }}<mk-ellipsis/></p>
 		<div :class="$style.stream" v-if="!fetching && images.length > 0">
-			<div v-for="image in images" :class="$style.img" :style="`background-image: url(${image.thumbnailUrl || image.url})`"></div>
+			<div v-for="(image, i) in images" :key="i"
+				:class="$style.img"
+				:style="`background-image: url(${thumbnail(image)})`"
+				draggable="true"
+				@dragstart="onDragstart(image, $event)"
+			></div>
 		</div>
 		<p :class="$style.empty" v-if="!fetching && images.length == 0">{{ $t('no-photos') }}</p>
-	</mk-widget-container>
+	</ui-container>
 </div>
 </template>
 
 <script lang="ts">
 import define from '../../../common/define-widget';
 import i18n from '../../../i18n';
+import { getStaticImageUrl } from '../../scripts/get-static-image-url';
 
 export default define({
 	name: 'photo-stream',
@@ -31,6 +37,7 @@ export default define({
 			connection: null
 		};
 	},
+
 	mounted() {
 		this.connection = this.$root.stream.useSharedConnection('main');
 
@@ -44,9 +51,11 @@ export default define({
 			this.fetching = false;
 		});
 	},
+
 	beforeDestroy() {
 		this.connection.dispose();
 	},
+
 	methods: {
 		onDriveFileCreated(file) {
 			if (/^image\/.+$/.test(file.type)) {
@@ -54,6 +63,7 @@ export default define({
 				if (this.images.length > 9) this.images.pop();
 			}
 		},
+
 		func() {
 			if (this.props.design == 2) {
 				this.props.design = 0;
@@ -62,7 +72,18 @@ export default define({
 			}
 
 			this.save();
-		}
+		},
+
+		onDragstart(file, e) {
+			e.dataTransfer.effectAllowed = 'move';
+			e.dataTransfer.setData('mk_drive_file', JSON.stringify(file));
+		},
+
+		thumbnail(image: any): string {
+			return this.$store.state.device.disableShowingAnimatedImages
+				? getStaticImageUrl(image.thumbnailUrl)
+				: image.thumbnailUrl;
+		},
 	}
 });
 </script>
@@ -96,7 +117,7 @@ export default define({
 	margin 0
 	padding 16px
 	text-align center
-	color #aaa
+	color var(--text)
 
 	> [data-icon]
 		margin-right 4px

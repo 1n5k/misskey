@@ -1,22 +1,23 @@
 <template>
 <div>
-	<mk-friends-maker v-if="src == 'home' && alone" style="margin-bottom:8px"/>
-
-	<mk-notes ref="timeline" :more="existMore ? more : null">
-		<div slot="empty">
-			<fa :icon="['far', 'comments']"/>
-			%i18n:@empty%
+	<ui-container v-if="src == 'home' && alone" :show-header="false" style="margin-bottom:8px;">
+		<div class="zrzngnxs">
+			<p>{{ $t('@.empty-timeline-info.follow-users-to-make-your-timeline') }}</p>
+			<router-link to="/explore">{{ $t('@.empty-timeline-info.explore') }}</router-link>
 		</div>
-	</mk-notes>
+	</ui-container>
+
+	<mk-notes ref="timeline" :pagination="pagination" @loaded="() => $emit('loaded')"/>
 </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
-
-const fetchLimit = 10;
+import i18n from '../../../i18n';
 
 export default Vue.extend({
+	i18n: i18n('mobile/views/pages/home.timeline.vue'),
+
 	props: {
 		src: {
 			type: String,
@@ -29,9 +30,6 @@ export default Vue.extend({
 
 	data() {
 		return {
-			fetching: true,
-			moreFetching: false,
-			existMore: false,
 			streamManager: null,
 			connection: null,
 			unreadCount: 0,
@@ -42,27 +40,30 @@ export default Vue.extend({
 				includeLocalRenotes: this.$store.state.settings.showLocalRenotes
 			},
 			query: {},
-			endpoint: null
+			endpoint: null,
+			pagination: null
 		};
 	},
 
 	computed: {
 		alone(): boolean {
 			return this.$store.state.i.followingCount == 0;
-		},
-
-		canFetchMore(): boolean {
-			return !this.moreFetching && !this.fetching && this.existMore;
 		}
 	},
 
-	mounted() {
+	created() {
+		this.$root.$on('warp', this.warp);
+		this.$once('hook:beforeDestroy', () => {
+			this.$root.$off('warp', this.warp);
+			this.connection.dispose();
+		});
+
 		const prepend = note => {
 			(this.$refs.timeline as any).prepend(note);
 		};
 
 		if (this.src == 'tag') {
-			this.endpoint = 'notes/search_by_tag';
+			this.endpoint = 'notes/search-by-tag';
 			this.query = {
 				query: this.tagTl.query
 			};
@@ -107,64 +108,36 @@ export default Vue.extend({
 			this.connection.on('mention', onNote);
 		}
 
-		this.fetch();
-	},
-
-	beforeDestroy() {
-		this.connection.dispose();
+		this.pagination = {
+			endpoint: this.endpoint,
+			limit: 10,
+			params: init => ({
+				untilDate: init ? undefined : (this.date ? this.date.getTime() : undefined),
+				...this.baseQuery, ...this.query
+			})
+		};
 	},
 
 	methods: {
-		fetch() {
-			this.fetching = true;
-
-			(this.$refs.timeline as any).init(() => new Promise((res, rej) => {
-				this.$root.api(this.endpoint, Object.assign({
-					limit: fetchLimit + 1,
-					untilDate: this.date ? this.date.getTime() : undefined
-				}, this.baseQuery, this.query)).then(notes => {
-					if (notes.length == fetchLimit + 1) {
-						notes.pop();
-						this.existMore = true;
-					}
-					res(notes);
-					this.fetching = false;
-					this.$emit('loaded');
-				}, rej);
-			}));
-		},
-
-		more() {
-			if (!this.canFetchMore) return;
-
-			this.moreFetching = true;
-
-			const promise = this.$root.api(this.endpoint, Object.assign({
-				limit: fetchLimit + 1,
-				untilId: (this.$refs.timeline as any).tail().id
-			}, this.baseQuery, this.query));
-
-			promise.then(notes => {
-				if (notes.length == fetchLimit + 1) {
-					notes.pop();
-				} else {
-					this.existMore = false;
-				}
-				notes.forEach(n => (this.$refs.timeline as any).append(n));
-				this.moreFetching = false;
-			});
-
-			return promise;
-		},
-
 		focus() {
 			(this.$refs.timeline as any).focus();
 		},
 
 		warp(date) {
 			this.date = date;
-			this.fetch();
+			(this.$refs.timeline as any).reload();
 		}
 	}
 });
 </script>
+
+<style lang="stylus" scoped>
+.zrzngnxs
+	padding 16px
+	text-align center
+	font-size 14px
+
+	> p
+		margin 0 0 8px 0
+
+</style>

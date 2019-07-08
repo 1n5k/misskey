@@ -1,11 +1,16 @@
 import $ from 'cafy';
 import define from '../../define';
-import networkChart from '../../../../chart/network';
+import { convertLog } from '../../../../services/chart/core';
+import { networkChart } from '../../../../services/chart';
 
 export const meta = {
+	stability: 'stable',
+
 	desc: {
 		'ja-JP': 'ネットワークのチャートを取得します。'
 	},
+
+	tags: ['charts'],
 
 	params: {
 		span: {
@@ -16,17 +21,17 @@ export const meta = {
 		},
 
 		limit: {
-			validator: $.num.optional.range(1, 500),
+			validator: $.optional.num.range(1, 500),
 			default: 30,
 			desc: {
 				'ja-JP': '最大数。例えば 30 を指定したとすると、スパンが"day"の場合は30日分のデータが、スパンが"hour"の場合は30時間分のデータが返ります。'
 			}
 		},
-	}
+	},
+
+	res: convertLog(networkChart.schema),
 };
 
-export default define(meta, (ps) => new Promise(async (res, rej) => {
-	const stats = await networkChart.getChart(ps.span as any, ps.limit);
-
-	res(stats);
-}));
+export default define(meta, async (ps) => {
+	return await networkChart.getChart(ps.span as any, ps.limit!);
+});

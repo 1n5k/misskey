@@ -1,11 +1,16 @@
 import $ from 'cafy';
 import define from '../../define';
-import hashtagChart from '../../../../chart/hashtag';
+import { convertLog } from '../../../../services/chart/core';
+import { hashtagChart } from '../../../../services/chart';
 
 export const meta = {
+	stability: 'stable',
+
 	desc: {
 		'ja-JP': 'ハッシュタグごとのチャートを取得します。'
 	},
+
+	tags: ['charts', 'hashtags'],
 
 	params: {
 		span: {
@@ -16,7 +21,7 @@ export const meta = {
 		},
 
 		limit: {
-			validator: $.num.optional.range(1, 500),
+			validator: $.optional.num.range(1, 500),
 			default: 30,
 			desc: {
 				'ja-JP': '最大数。例えば 30 を指定したとすると、スパンが"day"の場合は30日分のデータが、スパンが"hour"の場合は30時間分のデータが返ります。'
@@ -29,11 +34,11 @@ export const meta = {
 				'ja-JP': '対象のハッシュタグ'
 			}
 		},
-	}
+	},
+
+	res: convertLog(hashtagChart.schema),
 };
 
-export default define(meta, (ps) => new Promise(async (res, rej) => {
-	const stats = await hashtagChart.getChart(ps.span as any, ps.limit, ps.tag);
-
-	res(stats);
-}));
+export default define(meta, async (ps) => {
+	return await hashtagChart.getChart(ps.span as any, ps.limit!, ps.tag);
+});

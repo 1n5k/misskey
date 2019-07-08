@@ -1,7 +1,8 @@
 import $ from 'cafy';
 import * as speakeasy from 'speakeasy';
-import User from '../../../../../models/user';
 import define from '../../../define';
+import { UserProfiles } from '../../../../../models';
+import { ensure } from '../../../../../prelude/ensure';
 
 export const meta = {
 	requireCredential: true,
@@ -15,29 +16,27 @@ export const meta = {
 	}
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	const _token = ps.token.replace(/\s/g, '');
+export default define(meta, async (ps, user) => {
+	const token = ps.token.replace(/\s/g, '');
 
-	if (user.twoFactorTempSecret == null) {
-		return rej('二段階認証の設定が開始されていません');
+	const profile = await UserProfiles.findOne(user.id).then(ensure);
+
+	if (profile.twoFactorTempSecret == null) {
+		throw new Error('二段階認証の設定が開始されていません');
 	}
 
 	const verified = (speakeasy as any).totp.verify({
-		secret: user.twoFactorTempSecret,
+		secret: profile.twoFactorTempSecret,
 		encoding: 'base32',
-		token: _token
+		token: token
 	});
 
 	if (!verified) {
-		return rej('not verified');
+		throw new Error('not verified');
 	}
 
-	await User.update(user._id, {
-		$set: {
-			'twoFactorSecret': user.twoFactorTempSecret,
-			'twoFactorEnabled': true
-		}
+	await UserProfiles.update({ userId: user.id }, {
+		twoFactorSecret: profile.twoFactorTempSecret,
+		twoFactorEnabled: true
 	});
-
-	res();
-}));
+});

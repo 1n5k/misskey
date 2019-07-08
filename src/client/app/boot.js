@@ -3,15 +3,9 @@
  * (ENTRY POINT)
  */
 
-/**
- * ドメインに基づいて適切なスクリプトを読み込みます。
- * ユーザーの言語およびモバイル端末か否かも考慮します。
- * webpackは介さないためrequireやimportは使えません。
- */
-
 'use strict';
 
-(function() {
+(async function() {
 	// キャッシュ削除要求があれば従う
 	if (localStorage.getItem('shouldFlush') == 'true') {
 		refresh();
@@ -23,9 +17,9 @@
 	//#region Apply theme
 	const theme = localStorage.getItem('theme');
 	if (theme) {
-		Object.entries(JSON.parse(theme)).forEach(([k, v]) => {
+		for (const [k, v] of Object.entries(JSON.parse(theme))) {
 			document.documentElement.style.setProperty(`--${k}`, v.toString());
-		});
+		}
 	}
 	//#endregion
 
@@ -49,6 +43,9 @@
 	if (`${url.pathname}/`.startsWith('/admin/')) app = 'admin';
 	//#endregion
 
+	// Script version
+	const ver = localStorage.getItem('v') || VERSION;
+
 	//#region Detect the user language
 	let lang = null;
 
@@ -64,14 +61,37 @@
 	}
 
 	if (settings && settings.device.lang &&
-		langs.includes(settings.device.lang)) {
+		langs.includes(settings.device.lang))
+	{
 		lang = settings.device.lang;
+	}
+
+	localStorage.setItem('lang', lang);
+	//#endregion
+
+	//#region Fetch locale data
+	const cachedLocale = localStorage.getItem('locale');
+	const localeKey = localStorage.getItem('localeKey');
+
+	if (cachedLocale == null || localeKey != `${ver}.${lang}`) {
+		const locale = await fetch(`/assets/locales/${lang}.json?ver=${ver}`)
+			.then(response => response.json());
+
+		localStorage.setItem('locale', JSON.stringify(locale));
+		localStorage.setItem('localeKey', `${ver}.${lang}`);
 	}
 	//#endregion
 
 	// Detect the user agent
 	const ua = navigator.userAgent.toLowerCase();
-	const isMobile = /mobile|iphone|ipad|android/.test(ua);
+	let isMobile = /mobile|iphone|ipad|android/.test(ua) || window.innerWidth < 576;
+	if (settings && settings.device.appTypeForce) {
+		if (settings.device.appTypeForce === 'mobile') {
+			isMobile = true;
+		} else if (settings.device.appTypeForce === 'desktop') {
+			isMobile = false;
+		}
+	}
 
 	// Get the <head> element
 	const head = document.getElementsByTagName('head')[0];
@@ -94,19 +114,11 @@
 		app = isMobile ? 'mobile' : 'desktop';
 	}
 
-	// Script version
-	const ver = localStorage.getItem('v') || VERSION;
-
-	// Get salt query
-	const salt = localStorage.getItem('salt')
-		? `?salt=${localStorage.getItem('salt')}`
-		: '';
-
 	// Load an app script
 	// Note: 'async' make it possible to load the script asyncly.
 	//       'defer' make it possible to run the script when the dom loaded.
 	const script = document.createElement('script');
-	script.setAttribute('src', `/assets/${app}.${ver}.${lang}.js${salt}`);
+	script.setAttribute('src', `/assets/${app}.${ver}.js`);
 	script.setAttribute('async', 'true');
 	script.setAttribute('defer', 'true');
 	head.appendChild(script);
@@ -127,8 +139,8 @@
 		const meta = await res.json();
 
 		// Compare versions
-		if (meta.clientVersion != ver) {
-			localStorage.setItem('v', meta.clientVersion);
+		if (meta.version != ver) {
+			localStorage.setItem('v', meta.version);
 
 			alert(
 				'Misskeyの新しいバージョンがあります。ページを再度読み込みします。' +
@@ -142,15 +154,14 @@
 	function refresh() {
 		localStorage.setItem('shouldFlush', 'false');
 
-		// Random
-		localStorage.setItem('salt', Math.random().toString().substr(2, 8));
+		localStorage.removeItem('locale');
 
 		// Clear cache (service worker)
 		try {
 			navigator.serviceWorker.controller.postMessage('clear');
 
 			navigator.serviceWorker.getRegistrations().then(registrations => {
-				registrations.forEach(registration => registration.unregister());
+				for (const registration of registrations) registration.unregister();
 			});
 		} catch (e) {
 			console.error(e);

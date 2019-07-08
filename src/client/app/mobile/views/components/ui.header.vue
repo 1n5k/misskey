@@ -1,11 +1,10 @@
 <template>
-<div class="header" ref="root">
-	<p class="warn" v-if="env != 'production'">{{ $t('@.do-not-use-in-production') }}</p>
+<div class="header" ref="root" :class="{ shadow: $store.state.device.useShadow }">
 	<div class="main" ref="main">
 		<div class="backdrop"></div>
 		<div class="content" ref="mainContainer">
 			<button class="nav" @click="$parent.isDrawerOpening = true"><fa icon="bars"/></button>
-			<i v-if="hasUnreadNotification || hasUnreadMessagingMessage || hasGameInvitation" class="circle"><fa icon="circle"/></i>
+			<i v-if="$parent.indicate" class="circle"><fa icon="circle"/></i>
 			<h1>
 				<slot>{{ $root.instanceName }}</slot>
 			</h1>
@@ -19,7 +18,6 @@
 <script lang="ts">
 import Vue from 'vue';
 import i18n from '../../../i18n';
-import * as anime from 'animejs';
 import { env } from '../../../config';
 
 export default Vue.extend({
@@ -28,48 +26,13 @@ export default Vue.extend({
 
 	data() {
 		return {
-			hasGameInvitation: false,
-			connection: null,
 			env: env
 		};
 	},
 
-	computed: {
-		hasUnreadNotification(): boolean {
-			return this.$store.getters.isSignedIn && this.$store.state.i.hasUnreadNotification;
-		},
-
-		hasUnreadMessagingMessage(): boolean {
-			return this.$store.getters.isSignedIn && this.$store.state.i.hasUnreadMessagingMessage;
-		}
-	},
-
 	mounted() {
-		this.$store.commit('setUiHeaderHeight', this.$refs.root.offsetHeight);
-
-		if (this.$store.getters.isSignedIn) {
-			this.connection = this.$root.stream.useSharedConnection('main');
-
-			this.connection.on('reversiInvited', this.onReversiInvited);
-			this.connection.on('reversi_no_invites', this.onReversiNoInvites);
-		}
+		this.$store.commit('setUiHeaderHeight', 48);
 	},
-
-	beforeDestroy() {
-		if (this.$store.getters.isSignedIn) {
-			this.connection.dispose();
-		}
-	},
-
-	methods: {
-		onReversiInvited() {
-			this.hasGameInvitation = true;
-		},
-
-		onReversiNoInvites() {
-			this.hasGameInvitation = false;
-		}
-	}
 });
 </script>
 
@@ -79,9 +42,13 @@ export default Vue.extend({
 
 	position fixed
 	top 0
+	left -8px
 	z-index 1024
-	width 100%
-	box-shadow 0 1px 0 rgba(#000, 0.075)
+	width calc(100% + 16px)
+	padding 0 8px
+
+	&.shadow
+		box-shadow 0 0 8px rgba(0, 0, 0, 0.25)
 
 	&, *
 		user-select none
@@ -157,7 +124,7 @@ export default Vue.extend({
 				left 8px
 				pointer-events none
 				font-size 10px
-				color var(--primary)
+				color var(--notificationIndicator)
 
 			> button:last-child
 				display block

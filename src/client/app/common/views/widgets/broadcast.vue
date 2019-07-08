@@ -1,6 +1,6 @@
 <template>
 <div class="anltbovirfeutcigvwgmgxipejaeozxi">
-	<mk-widget-container :show-header="false" :naked="props.design == 1">
+	<ui-container :show-header="false" :naked="props.design == 1">
 		<div class="anltbovirfeutcigvwgmgxipejaeozxi-body"
 			:data-found="announcements && announcements.length != 0"
 			:data-melt="props.design == 1"
@@ -16,14 +16,15 @@
 				</svg>
 			</div>
 			<p class="fetching" v-if="fetching">{{ $t('fetching') }}<mk-ellipsis/></p>
-			<h1 v-if="!fetching">{{ announcements.length == 0 ? this.$t('no-broadcasts') : announcements[i].title }}</h1>
+			<h1 v-if="!fetching">{{ announcements.length == 0 ? $t('no-broadcasts') : announcements[i].title }}</h1>
 			<p v-if="!fetching">
-				<span v-if="announcements.length != 0" v-html="announcements[i].text"></span>
+				<mfm v-if="announcements.length != 0" :text="announcements[i].text" :key="i"/>
+				<img v-if="announcements.length != 0 && announcements[i].image" :src="announcements[i].image" alt="" style="display: block; max-height: 130px; max-width: 100%;"/>
 				<template v-if="announcements.length == 0">{{ $t('have-a-nice-day') }}</template>
 			</p>
 			<a v-if="announcements.length > 1" @click="next">{{ $t('next') }} &gt;&gt;</a>
 		</div>
-	</mk-widget-container>
+	</ui-container>
 </div>
 </template>
 
@@ -47,7 +48,7 @@ export default define({
 	},
 	mounted() {
 		this.$root.getMeta().then(meta => {
-			this.announcements = meta.broadcasts;
+			this.announcements = meta.announcements;
 			this.fetching = false;
 		});
 	},

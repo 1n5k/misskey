@@ -15,35 +15,44 @@
 		</div>
 		<div class="me">
 			<img class="avatar" :src="$store.state.i.avatarUrl" alt="avatar"/>
-			<p class="name">{{ $store.state.i | userName }}</p>
+			<p class="name"><mk-user-name :user="$store.state.i"/></p>
 		</div>
 		<ul>
 			<li @click="nav('dashboard')" :class="{ active: page == 'dashboard' }"><fa icon="home" fixed-width/>{{ $t('dashboard') }}</li>
 			<li @click="nav('instance')" :class="{ active: page == 'instance' }"><fa icon="cog" fixed-width/>{{ $t('instance') }}</li>
+			<li @click="nav('queue')" :class="{ active: page == 'queue' }"><fa :icon="faTasks" fixed-width/>{{ $t('queue') }}</li>
+			<li @click="nav('logs')" :class="{ active: page == 'logs' }"><fa :icon="faStream" fixed-width/>{{ $t('logs') }}</li>
+			<li @click="nav('db')" :class="{ active: page == 'db' }"><fa :icon="faDatabase" fixed-width/>{{ $t('db') }}</li>
+			<li @click="nav('moderators')" :class="{ active: page == 'moderators' }"><fa :icon="faHeadset" fixed-width/>{{ $t('moderators') }}</li>
 			<li @click="nav('users')" :class="{ active: page == 'users' }"><fa icon="users" fixed-width/>{{ $t('users') }}</li>
-			<li @click="nav('emoji')" :class="{ active: page == 'emoji' }"><fa :icon="['far', 'grin']" fixed-width/>{{ $t('emoji') }}</li>
+			<li @click="nav('drive')" :class="{ active: page == 'drive' }"><fa icon="cloud" fixed-width/>{{ $t('@.drive') }}</li>
+			<li @click="nav('federation')" :class="{ active: page == 'federation' }"><fa :icon="faGlobe" fixed-width/>{{ $t('federation') }}</li>
+			<li @click="nav('emoji')" :class="{ active: page == 'emoji' }"><fa :icon="faGrin" fixed-width/>{{ $t('emoji') }}</li>
 			<li @click="nav('announcements')" :class="{ active: page == 'announcements' }"><fa icon="broadcast-tower" fixed-width/>{{ $t('announcements') }}</li>
-			<li @click="nav('hashtags')" :class="{ active: page == 'hashtags' }"><fa icon="hashtag" fixed-width/>{{ $t('hashtags') }}</li>
-
-			<!-- <li @click="nav('drive')" :class="{ active: page == 'drive' }"><fa icon="cloud" fixed-width/>{{ $t('@.drive') }}</li> -->
-			<!-- <li @click="nav('update')" :class="{ active: page == 'update' }">{{ $t('update') }}</li> -->
+			<li @click="nav('abuse')" :class="{ active: page == 'abuse' }"><fa :icon="faExclamationCircle" fixed-width/>{{ $t('abuse') }}</li>
 		</ul>
 		<div class="back-to-misskey">
-			<a href="/"><fa icon="arrow-left"/> {{ $t('back-to-misskey') }}</a>
+			<a href="/"><fa :icon="faArrowLeft"/> {{ $t('back-to-misskey') }}</a>
 		</div>
 		<div class="version">
 			<small>Misskey {{ version }}</small>
 		</div>
 	</nav>
 	<main>
-		<div v-if="page == 'dashboard'"><x-dashboard/></div>
-		<div v-if="page == 'instance'"><x-instance/></div>
-		<div v-if="page == 'users'"><x-users/></div>
-		<div v-if="page == 'emoji'"><x-emoji/></div>
-		<div v-if="page == 'announcements'"><x-announcements/></div>
-		<div v-if="page == 'hashtags'"><x-hashtags/></div>
-		<div v-if="page == 'drive'"></div>
-		<div v-if="page == 'update'"></div>
+		<div class="page">
+			<div v-if="page == 'dashboard'"><x-dashboard/></div>
+			<div v-if="page == 'instance'"><x-instance/></div>
+			<div v-if="page == 'queue'"><x-queue/></div>
+			<div v-if="page == 'logs'"><x-logs/></div>
+			<div v-if="page == 'db'"><x-db/></div>
+			<div v-if="page == 'moderators'"><x-moderators/></div>
+			<div v-if="page == 'users'"><x-users/></div>
+			<div v-if="page == 'emoji'"><x-emoji/></div>
+			<div v-if="page == 'announcements'"><x-announcements/></div>
+			<div v-if="page == 'drive'"><x-drive/></div>
+			<div v-if="page == 'federation'"><x-federation/></div>
+			<div v-if="page == 'abuse'"><x-abuse/></div>
+		</div>
 	</main>
 </div>
 </template>
@@ -52,12 +61,21 @@
 import Vue from 'vue';
 import i18n from '../../i18n';
 import { version } from '../../config';
-import XDashboard from "./dashboard.vue";
-import XInstance from "./instance.vue";
-import XEmoji from "./emoji.vue";
-import XAnnouncements from "./announcements.vue";
-import XHashtags from "./hashtags.vue";
-import XUsers from "./users.vue";
+import XDashboard from './dashboard.vue';
+import XInstance from './instance.vue';
+import XQueue from './queue.vue';
+import XLogs from './logs.vue';
+import XDb from './db.vue';
+import XModerators from './moderators.vue';
+import XEmoji from './emoji.vue';
+import XAnnouncements from './announcements.vue';
+import XUsers from './users.vue';
+import XDrive from './drive.vue';
+import XAbuse from './abuse.vue';
+import XFederation from './federation.vue';
+
+import { faHeadset, faArrowLeft, faGlobe, faExclamationCircle, faTasks, faStream, faDatabase } from '@fortawesome/free-solid-svg-icons';
+import { faGrin } from '@fortawesome/free-regular-svg-icons';
 
 // Detect the user agent
 const ua = navigator.userAgent.toLowerCase();
@@ -68,10 +86,16 @@ export default Vue.extend({
 	components: {
 		XDashboard,
 		XInstance,
+		XQueue,
+		XLogs,
+		XDb,
+		XModerators,
 		XEmoji,
 		XAnnouncements,
-		XHashtags,
-		XUsers
+		XUsers,
+		XDrive,
+		XAbuse,
+		XFederation,
 	},
 	provide: {
 		isMobile
@@ -81,7 +105,15 @@ export default Vue.extend({
 			page: 'dashboard',
 			version,
 			isMobile,
-			navOpend: !isMobile
+			navOpend: !isMobile,
+			faGrin,
+			faArrowLeft,
+			faHeadset,
+			faGlobe,
+			faExclamationCircle,
+			faTasks,
+			faStream,
+			faDatabase,
 		};
 	},
 	methods: {
@@ -92,7 +124,7 @@ export default Vue.extend({
 });
 </script>
 
-<style lang="stylus">
+<style lang="stylus" scoped>
 .mk-admin
 	$headerHeight = 48px
 
@@ -253,7 +285,12 @@ export default Vue.extend({
 	> main
 		width 100%
 		padding 0 0 0 250px
-		max-width 1300px
+
+		> .page
+			max-width 1150px
+
+			@media (min-width 500px)
+				padding 16px
 
 	&.isMobile
 		> main

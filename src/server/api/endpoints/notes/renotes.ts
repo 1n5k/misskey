@@ -1,6 +1,12 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../misc/cafy-id';
-import Note, { packMany } from '../../../../models/note';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
 import define from '../../define';
+import { getNote } from '../../common/getters';
+import { ApiError } from '../../error';
+import { generateVisibilityQuery } from '../../common/generate-visibility-query';
+import { generateMuteQuery } from '../../common/generate-mute-query';
+import { makePaginationQuery } from '../../common/make-pagination-query';
+import { Notes } from '../../../../models';
 
 export const meta = {
 	desc: {
@@ -8,12 +14,13 @@ export const meta = {
 		'en-US': 'Show a renotes of a note.'
 	},
 
+	tags: ['notes'],
+
 	requireCredential: false,
 
 	params: {
 		noteId: {
 			validator: $.type(ID),
-			transform: transform,
 			desc: {
 				'ja-JP': '対象の投稿のID',
 				'en-US': 'Target note ID'
@@ -21,61 +28,52 @@ export const meta = {
 		},
 
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 10
 		},
 
 		sinceId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		untilId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
+		}
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'Note',
+		}
+	},
+
+	errors: {
+		noSuchNote: {
+			message: 'No such note.',
+			code: 'NO_SUCH_NOTE',
+			id: '12908022-2e21-46cd-ba6a-3edaf6093f46'
 		}
 	}
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	// Check if both of sinceId and untilId is specified
-	if (ps.sinceId && ps.untilId) {
-		return rej('cannot set sinceId and untilId');
-	}
-
-	// Lookup note
-	const note = await Note.findOne({
-		_id: ps.noteId
+export default define(meta, async (ps, user) => {
+	const note = await getNote(ps.noteId).catch(e => {
+		if (e.id === '9725d0ce-ba28-4dde-95a7-2cbb2c15de24') throw new ApiError(meta.errors.noSuchNote);
+		throw e;
 	});
 
-	if (note === null) {
-		return rej('note not found');
-	}
+	const query = makePaginationQuery(Notes.createQueryBuilder('note'), ps.sinceId, ps.untilId)
+		.andWhere(`note.renoteId = :renoteId`, { renoteId: note.id })
+		.leftJoinAndSelect('note.user', 'user');
 
-	const sort = {
-		_id: -1
-	};
+	if (user) generateVisibilityQuery(query, user);
+	if (user) generateMuteQuery(query, user);
 
-	const query = {
-		renoteId: note._id
-	} as any;
+	const renotes = await query.take(ps.limit!).getMany();
 
-	if (ps.sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: ps.sinceId
-		};
-	} else if (ps.untilId) {
-		query._id = {
-			$lt: ps.untilId
-		};
-	}
-
-	const renotes = await Note
-		.find(query, {
-			limit: ps.limit,
-			sort: sort
-		});
-
-	res(await packMany(renotes, user));
-}));
+	return await Notes.packMany(renotes, user);
+});

@@ -1,7 +1,7 @@
 <template>
 <div class="form">
 	<header>
-		<h1 v-html="$t('share-access', { name: app.name })"></h1>
+		<h1 v-html="$t('share-access', { name })"></h1>
 		<img :src="app.iconUrl"/>
 	</header>
 	<div class="app">
@@ -14,15 +14,7 @@
 			<h2>{{ $t('permission-ask') }}</h2>
 			<ul>
 				<template v-for="p in app.permission">
-					<li v-if="p == 'account-read'">{{ $t('account-read') }}</li>
-					<li v-if="p == 'account-write'">{{ $t('account-write') }}</li>
-					<li v-if="p == 'note-write'">{{ $t('note-write') }}</li>
-					<li v-if="p == 'like-write'">{{ $t('like-write') }}</li>
-					<li v-if="p == 'following-write'">{{ $t('following-write') }}</li>
-					<li v-if="p == 'drive-read'">{{ $t('drive-read') }}</li>
-					<li v-if="p == 'drive-write'">{{ $t('drive-write') }}</li>
-					<li v-if="p == 'notification-read'">{{ $t('notification-read') }}</li>
-					<li v-if="p == 'notification-write'">{{ $t('notification-write') }}</li>
+					<li :key="p">{{ $t(`@.permissions.${p}`) }}</li>
 				</template>
 			</ul>
 		</section>
@@ -42,6 +34,11 @@ export default Vue.extend({
 	i18n: i18n('auth/views/form.vue'),
 	props: ['session'],
 	computed: {
+		name(): string {
+			const el = document.createElement('div');
+			el.textContent = this.app.name
+			return el.innerHTML;
+		},
 		app(): any {
 			return this.session.app;
 		}

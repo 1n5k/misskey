@@ -34,7 +34,7 @@ body
 	.peg
 		display block
 		position absolute
-		right 0px
+		right 0
 		width 100px
 		height 100%
 		box-shadow 0 0 10px var(--primary), 0 0 5px var(--primary)
@@ -72,47 +72,6 @@ body
 code
 	font-family Consolas, 'Courier New', Courier, Monaco, monospace
 
-	.comment
-		opacity 0.5
-
-	.string
-		color #e96900
-
-	.regexp
-		color #e9003f
-
-	.keyword
-		color #2973b7
-
-		&.true
-		&.false
-		&.null
-		&.nil
-		&.undefined
-			color #ae81ff
-
-	.symbol
-		color #42b983
-
-	.number
-	.nan
-		color #ae81ff
-
-	.var:not(.keyword)
-		font-weight bold
-		font-style italic
-		//text-decoration underline
-
-	.method
-		font-style italic
-		color #8964c1
-
-	.property
-		color #a71d5d
-
-	.label
-		color #e9003f
-
 pre
 	display block
 
@@ -123,29 +82,3 @@ pre
 
 [data-icon]
 	display inline-block
-
-.swal2-container
-	z-index 10000 !important
-
-	&.swal2-shown
-		background-color rgba(0, 0, 0, 0.5) !important
-
-.swal2-popup
-	background var(--face) !important
-
-.swal2-content
-	color var(--text) !important
-
-.swal2-confirm
-	background-color var(--primary) !important
-	border-left-color var(--primary) !important
-	border-right-color var(--primary) !important
-	color var(--primaryForeground) !important
-
-	&:hover
-		background-image none !important
-		background-color var(--primaryDarken5) !important
-
-	&:active
-		background-image none !important
-		background-color var(--primaryDarken5) !important

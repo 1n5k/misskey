@@ -1,7 +1,6 @@
 import define from '../define';
-import driveChart from '../../../chart/drive';
-import federationChart from '../../../chart/federation';
-import fetchMeta from '../../../misc/fetch-meta';
+import { Notes, Users } from '../../../models';
+import { federationChart, driveChart } from '../../../services/chart';
 
 export const meta = {
 	requireCredential: false,
@@ -10,21 +9,69 @@ export const meta = {
 		'en-US': 'Get the instance\'s statistics'
 	},
 
+	tags: ['meta'],
+
 	params: {
+	},
+
+	res: {
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		properties: {
+			notesCount: {
+				type: 'number' as const,
+				optional: false as const, nullable: false as const,
+				description: 'The count of all (local/remote) notes of this instance.',
+			},
+			originalNotesCount: {
+				type: 'number' as const,
+				optional: false as const, nullable: false as const,
+				description: 'The count of all local notes of this instance.',
+			},
+			usersCount: {
+				type: 'number' as const,
+				optional: false as const, nullable: false as const,
+				description: 'The count of all (local/remote) accounts of this instance.',
+			},
+			originalUsersCount: {
+				type: 'number' as const,
+				optional: false as const, nullable: false as const,
+				description: 'The count of all local accounts of this instance.',
+			},
+			instances: {
+				type: 'number' as const,
+				optional: false as const, nullable: false as const,
+				description: 'The count of federated instances.',
+			},
+		}
 	}
 };
 
-export default define(meta, () => new Promise(async (res, rej) => {
-	const instance = await fetchMeta();
+export default define(meta, async () => {
+	const [notesCount,
+		originalNotesCount,
+		usersCount,
+		originalUsersCount,
+		instances,
+		driveUsageLocal,
+		driveUsageRemote
+	] = await Promise.all([
+		Notes.count({ cache: 3600000 }), // 1 hour
+		Notes.count({ where: { userHost: null }, cache: 3600000 }),
+		Users.count({ cache: 3600000 }),
+		Users.count({ where: { host: null }, cache: 3600000 }),
+		federationChart.getChart('hour', 1).then(chart => chart.instance.total[0]),
+		driveChart.getChart('hour', 1).then(chart => chart.local.totalSize[0]),
+		driveChart.getChart('hour', 1).then(chart => chart.remote.totalSize[0]),
+	]);
 
-	const stats: any = instance.stats;
-
-	const driveStats = await driveChart.getChart('hour', 1);
-	stats.driveUsageLocal = driveStats.local.totalSize[0];
-	stats.driveUsageRemote = driveStats.remote.totalSize[0];
-
-	const federationStats = await federationChart.getChart('hour', 1);
-	stats.instances = federationStats.instance.total[0];
-
-	res(stats);
-}));
+	return {
+		notesCount,
+		originalNotesCount,
+		usersCount,
+		originalUsersCount,
+		instances,
+		driveUsageLocal,
+		driveUsageRemote
+	};
+});

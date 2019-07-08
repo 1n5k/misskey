@@ -1,42 +1,63 @@
 <template>
-<div class="ucnffhbtogqgscfmqcymwmmupoknpfsw">
+<div>
 	<ui-card>
-		<div slot="title">{{ $t('verify-user') }}</div>
+		<template #title><fa :icon="faTerminal"/> {{ $t('operation') }}</template>
 		<section class="fit-top">
-			<ui-input v-model="verifyUsername" type="text">
-				<span slot="prefix">@</span>
+			<ui-input class="target" v-model="target" type="text" @enter="showUser">
+				<span>{{ $t('username-or-userid') }}</span>
 			</ui-input>
-			<ui-button @click="verifyUser" :disabled="verifying">{{ $t('verify') }}</ui-button>
+			<ui-button @click="showUser"><fa :icon="faSearch"/> {{ $t('lookup') }}</ui-button>
+
+			<div class="user" v-if="user">
+				<x-user :user="user"/>
+				<div class="actions">
+					<ui-button v-if="user.host != null" @click="updateRemoteUser"><fa :icon="faSync"/> {{ $t('update-remote-user') }}</ui-button>
+					<ui-button @click="resetPassword"><fa :icon="faKey"/> {{ $t('reset-password') }}</ui-button>
+					<ui-horizon-group>
+						<ui-button @click="silenceUser"><fa :icon="faMicrophoneSlash"/> {{ $t('make-silence') }}</ui-button>
+						<ui-button @click="unsilenceUser">{{ $t('unmake-silence') }}</ui-button>
+					</ui-horizon-group>
+					<ui-horizon-group>
+						<ui-button @click="suspendUser" :disabled="suspending"><fa :icon="faSnowflake"/> {{ $t('suspend') }}</ui-button>
+						<ui-button @click="unsuspendUser" :disabled="unsuspending">{{ $t('unsuspend') }}</ui-button>
+					</ui-horizon-group>
+					<ui-button @click="deleteAllFiles"><fa :icon="faTrashAlt"/> {{ $t('delete-all-files') }}</ui-button>
+					<ui-textarea v-if="user" :value="user | json5" readonly tall style="margin-top:16px;"></ui-textarea>
+				</div>
+			</div>
 		</section>
 	</ui-card>
 
 	<ui-card>
-		<div slot="title">{{ $t('unverify-user') }}</div>
+		<template #title><fa :icon="faUsers"/> {{ $t('users.title') }}</template>
 		<section class="fit-top">
-			<ui-input v-model="unverifyUsername" type="text">
-				<span slot="prefix">@</span>
-			</ui-input>
-			<ui-button @click="unverifyUser" :disabled="unverifying">{{ $t('unverify') }}</ui-button>
-		</section>
-	</ui-card>
-
-	<ui-card>
-		<div slot="title">{{ $t('suspend-user') }}</div>
-		<section class="fit-top">
-			<ui-input v-model="suspendUsername" type="text">
-				<span slot="prefix">@</span>
-			</ui-input>
-			<ui-button @click="suspendUser" :disabled="suspending">{{ $t('suspend') }}</ui-button>
-		</section>
-	</ui-card>
-
-	<ui-card>
-		<div slot="title">{{ $t('unsuspend-user') }}</div>
-		<section class="fit-top">
-			<ui-input v-model="unsuspendUsername" type="text">
-				<span slot="prefix">@</span>
-			</ui-input>
-			<ui-button @click="unsuspendUser" :disabled="unsuspending">{{ $t('unsuspend') }}</ui-button>
+			<ui-horizon-group inputs>
+				<ui-select v-model="sort">
+					<template #label>{{ $t('users.sort.title') }}</template>
+					<option value="-createdAt">{{ $t('users.sort.createdAtAsc') }}</option>
+					<option value="+createdAt">{{ $t('users.sort.createdAtDesc') }}</option>
+					<option value="-updatedAt">{{ $t('users.sort.updatedAtAsc') }}</option>
+					<option value="+updatedAt">{{ $t('users.sort.updatedAtDesc') }}</option>
+				</ui-select>
+				<ui-select v-model="state">
+					<template #label>{{ $t('users.state.title') }}</template>
+					<option value="all">{{ $t('users.state.all') }}</option>
+					<option value="admin">{{ $t('users.state.admin') }}</option>
+					<option value="moderator">{{ $t('users.state.moderator') }}</option>
+					<option value="silenced">{{ $t('users.state.silenced') }}</option>
+					<option value="suspended">{{ $t('users.state.suspended') }}</option>
+				</ui-select>
+				<ui-select v-model="origin">
+					<template #label>{{ $t('users.origin.title') }}</template>
+					<option value="combined">{{ $t('users.origin.combined') }}</option>
+					<option value="local">{{ $t('users.origin.local') }}</option>
+					<option value="remote">{{ $t('users.origin.remote') }}</option>
+				</ui-select>
+			</ui-horizon-group>
+			<sequential-entrance animation="entranceFromTop" delay="25">
+				<x-user v-for="user in users" :user='user' :key="user.id"/>
+			</sequential-entrance>
+			<ui-button v-if="existMore" @click="fetchUsers">{{ $t('@.load-more') }}</ui-button>
 		</section>
 	</ui-card>
 </div>
@@ -46,93 +67,276 @@
 import Vue from 'vue';
 import i18n from '../../i18n';
 import parseAcct from "../../../../misc/acct/parse";
+import { faUsers, faTerminal, faSearch, faKey, faSync, faMicrophoneSlash } from '@fortawesome/free-solid-svg-icons';
+import { faSnowflake, faTrashAlt } from '@fortawesome/free-regular-svg-icons';
+import XUser from './users.user.vue';
 
 export default Vue.extend({
 	i18n: i18n('admin/views/users.vue'),
+	components: {
+		XUser
+	},
 	data() {
 		return {
-			verifyUsername: null,
-			verifying: false,
-			unverifyUsername: null,
-			unverifying: false,
-			suspendUsername: null,
+			user: null,
+			target: null,
 			suspending: false,
-			unsuspendUsername: null,
-			unsuspending: false
+			unsuspending: false,
+			sort: '+createdAt',
+			state: 'all',
+			origin: 'local',
+			limit: 10,
+			offset: 0,
+			users: [],
+			existMore: false,
+			faTerminal, faUsers, faSnowflake, faSearch, faKey, faSync, faMicrophoneSlash, faTrashAlt
 		};
 	},
 
-	methods: {
-		async verifyUser() {
-			this.verifying = true;
-
-			const process = async () => {
-				const user = await this.$root.os.api('users/show', parseAcct(this.verifyUsername));
-				await this.$root.os.api('admin/verify-user', { userId: user.id });
-				//this.$root.os.apis.dialog({ text: this.$t('verified') });
-			};
-
-			await process().catch(e => {
-				//this.$root.os.apis.dialog({ text: `Failed: ${e}` });
-			});
-
-			this.verifying = false;
+	watch: {
+		sort() {
+			this.users = [];
+			this.offset = 0;
+			this.fetchUsers();
 		},
 
-		async unverifyUser() {
-			this.unverifying = true;
+		state() {
+			this.users = [];
+			this.offset = 0;
+			this.fetchUsers();
+		},
+
+		origin() {
+			this.users = [];
+			this.offset = 0;
+			this.fetchUsers();
+		}
+	},
+
+	mounted() {
+		this.fetchUsers();
+	},
+
+	methods: {
+		/** テキストエリアのユーザーを解決する */
+		fetchUser() {
+			return new Promise((res) => {
+				const usernamePromise = this.$root.api('users/show', parseAcct(this.target));
+				const idPromise = this.$root.api('users/show', { userId: this.target });
+
+				let _notFound = false;
+				const notFound = () => {
+					if (_notFound) {
+						this.$root.dialog({
+							type: 'error',
+							text: this.$t('user-not-found')
+						});
+					} else {
+						_notFound = true;
+					}
+				};
+
+				usernamePromise.then(res).catch(e => {
+					if (e == 'user not found') {
+						notFound();
+					}
+				});
+				idPromise.then(res).catch(e => {
+					notFound();
+				});
+			});
+		},
+
+		/** テキストエリアから処理対象ユーザーを設定する */
+		async showUser() {
+			this.user = null;
+			const user = await this.fetchUser();
+			this.$root.api('admin/show-user', { userId: user.id }).then(info => {
+				this.user = info;
+			});
+			this.target = '';
+		},
+
+		/** 処理対象ユーザーの情報を更新する */
+		async refreshUser() {
+			this.$root.api('admin/show-user', { userId: this.user.id }).then(info => {
+				this.user = info;
+			});
+		},
+
+		async resetPassword() {
+			if (!await this.getConfirmed(this.$t('reset-password-confirm'))) return;
+
+			this.$root.api('admin/reset-password', { userId: this.user.id }).then(res => {
+				this.$root.dialog({
+					type: 'success',
+					text: this.$t('password-updated', { password: res.password })
+				});
+			});
+		},
+
+		async silenceUser() {
+			if (!await this.getConfirmed(this.$t('silence-confirm'))) return;
 
 			const process = async () => {
-				const user = await this.$root.os.api('users/show', parseAcct(this.unverifyUsername));
-				await this.$root.os.api('admin/unverify-user', { userId: user.id });
-				//this.$root.os.apis.dialog({ text: this.$t('unverified') });
+				await this.$root.api('admin/silence-user', { userId: this.user.id });
+				this.$root.dialog({
+					type: 'success',
+					splash: true
+				});
 			};
 
 			await process().catch(e => {
-				//this.$root.os.apis.dialog({ text: `Failed: ${e}` });
+				this.$root.dialog({
+					type: 'error',
+					text: e.toString()
+				});
 			});
 
-			this.unverifying = false;
+			this.refreshUser();
+		},
+
+		async unsilenceUser() {
+			if (!await this.getConfirmed(this.$t('unsilence-confirm'))) return;
+
+			const process = async () => {
+				await this.$root.api('admin/unsilence-user', { userId: this.user.id });
+				this.$root.dialog({
+					type: 'success',
+					splash: true
+				});
+			};
+
+			await process().catch(e => {
+				this.$root.dialog({
+					type: 'error',
+					text: e.toString()
+				});
+			});
+
+			this.refreshUser();
 		},
 
 		async suspendUser() {
+			if (!await this.getConfirmed(this.$t('suspend-confirm'))) return;
+
 			this.suspending = true;
 
 			const process = async () => {
-				const user = await this.$root.os.api('users/show', parseAcct(this.suspendUsername));
-				await this.$root.os.api('admin/suspend-user', { userId: user.id });
-				//this.$root.os.apis.dialog({ text: this.$t('suspended') });
+				await this.$root.api('admin/suspend-user', { userId: this.user.id });
+				this.$root.dialog({
+					type: 'success',
+					text: this.$t('suspended')
+				});
 			};
 
 			await process().catch(e => {
-				//this.$root.os.apis.dialog({ text: `Failed: ${e}` });
+				this.$root.dialog({
+					type: 'error',
+					text: e.toString()
+				});
 			});
 
 			this.suspending = false;
+
+			this.refreshUser();
 		},
 
 		async unsuspendUser() {
+			if (!await this.getConfirmed(this.$t('unsuspend-confirm'))) return;
+
 			this.unsuspending = true;
 
 			const process = async () => {
-				const user = await this.$root.os.api('users/show', parseAcct(this.unsuspendUsername));
-				await this.$root.os.api('admin/unsuspend-user', { userId: user.id });
-				//this.$root.os.apis.dialog({ text: this.$t('unsuspended') });
+				await this.$root.api('admin/unsuspend-user', { userId: this.user.id });
+				this.$root.dialog({
+					type: 'success',
+					text: this.$t('unsuspended')
+				});
 			};
 
 			await process().catch(e => {
-				//this.$root.os.apis.dialog({ text: `Failed: ${e}` });
+				this.$root.dialog({
+					type: 'error',
+					text: e.toString()
+				});
 			});
 
 			this.unsuspending = false;
+
+			this.refreshUser();
+		},
+
+		async updateRemoteUser() {
+			this.$root.api('admin/update-remote-user', { userId: this.user.id }).then(res => {
+				this.$root.dialog({
+					type: 'success',
+					text: this.$t('remote-user-updated')
+				});
+			});
+
+			this.refreshUser();
+		},
+
+		async deleteAllFiles() {
+			if (!await this.getConfirmed(this.$t('delete-all-files-confirm'))) return;
+
+			const process = async () => {
+				await this.$root.api('admin/delete-all-files-of-a-user', { userId: this.user.id });
+				this.$root.dialog({
+					type: 'success',
+					splash: true
+				});
+			};
+
+			await process().catch(e => {
+				this.$root.dialog({
+					type: 'error',
+					text: e.toString()
+				});
+			});
+		},
+
+		async getConfirmed(text: string): Promise<Boolean> {
+			const confirm = await this.$root.dialog({
+				type: 'warning',
+				showCancelButton: true,
+				title: 'confirm',
+				text,
+			});
+
+			return !confirm.canceled;
+		},
+
+		fetchUsers() {
+			this.$root.api('admin/show-users', {
+				state: this.state,
+				origin: this.origin,
+				sort: this.sort,
+				offset: this.offset,
+				limit: this.limit + 1
+			}).then(users => {
+				if (users.length == this.limit + 1) {
+					users.pop();
+					this.existMore = true;
+				} else {
+					this.existMore = false;
+				}
+				this.users = this.users.concat(users);
+				this.offset += this.limit;
+			});
 		}
 	}
 });
 </script>
 
 <style lang="stylus" scoped>
-.ucnffhbtogqgscfmqcymwmmupoknpfsw
-	@media (min-width 500px)
-		padding 16px
+.target
+	margin-bottom 16px !important
 
+.user
+	margin-top 32px
+
+	> .actions
+		margin-left 80px
 </style>

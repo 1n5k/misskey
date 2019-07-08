@@ -1,12 +1,14 @@
 import $ from 'cafy';
-const escapeRegexp = require('escape-regexp');
-import User, { pack, validateUsername, IUser } from '../../../../models/user';
 import define from '../../define';
+import { Users } from '../../../../models';
+import { User } from '../../../../models/entities/user';
 
 export const meta = {
 	desc: {
 		'ja-JP': 'ユーザーを検索します。'
 	},
+
+	tags: ['users'],
 
 	requireCredential: false,
 
@@ -19,7 +21,7 @@ export const meta = {
 		},
 
 		offset: {
-			validator: $.num.optional.min(0),
+			validator: $.optional.num.min(0),
 			default: 0,
 			desc: {
 				'ja-JP': 'オフセット'
@@ -27,7 +29,7 @@ export const meta = {
 		},
 
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 10,
 			desc: {
 				'ja-JP': '取得する数'
@@ -35,121 +37,58 @@ export const meta = {
 		},
 
 		localOnly: {
-			validator: $.bool.optional,
+			validator: $.optional.bool,
 			default: false,
 			desc: {
 				'ja-JP': 'ローカルユーザーのみ検索対象にするか否か'
 			}
 		},
+
+		detail: {
+			validator: $.optional.bool,
+			default: true,
+			desc: {
+				'ja-JP': '詳細なユーザー情報を含めるか否か'
+			}
+		},
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'User',
+		}
 	},
 };
 
-export default define(meta, (ps, me) => new Promise(async (res, rej) => {
-	const isUsername = validateUsername(ps.query.replace('@', ''));
+export default define(meta, async (ps, me) => {
+	const isUsername = ps.localOnly ? Users.validateLocalUsername.ok(ps.query.replace('@', '')) : Users.validateRemoteUsername.ok(ps.query.replace('@', ''));
 
-	let users: IUser[] = [];
+	let users: User[] = [];
 
 	if (isUsername) {
-		users = await User
-			.find({
-				host: null,
-				usernameLower: new RegExp('^' + escapeRegexp(ps.query.replace('@', '').toLowerCase()))
-			}, {
-				limit: ps.limit,
-				skip: ps.offset
-			});
+		users = await Users.createQueryBuilder('user')
+			.where('user.host IS NULL')
+			.andWhere('user.isSuspended = FALSE')
+			.andWhere('user.usernameLower like :username', { username: ps.query.replace('@', '').toLowerCase() + '%' })
+			.take(ps.limit!)
+			.skip(ps.offset)
+			.getMany();
 
-		if (users.length < ps.limit && !ps.localOnly) {
-			const otherUsers = await User
-				.find({
-					host: { $ne: null },
-					usernameLower: new RegExp('^' + escapeRegexp(ps.query.replace('@', '').toLowerCase()))
-				}, {
-					limit: ps.limit - users.length
-				});
-
-			users = users.concat(otherUsers);
-		}
-
-		if (users.length < ps.limit) {
-			const otherUsers = await User
-				.find({
-					_id: { $nin: users.map(u => u._id) },
-					host: null,
-					usernameLower: new RegExp(escapeRegexp(ps.query.replace('@', '').toLowerCase()))
-				}, {
-					limit: ps.limit - users.length
-				});
-
-			users = users.concat(otherUsers);
-		}
-
-		if (users.length < ps.limit && !ps.localOnly) {
-			const otherUsers = await User
-				.find({
-					_id: { $nin: users.map(u => u._id) },
-					host: { $ne: null },
-					usernameLower: new RegExp(escapeRegexp(ps.query.replace('@', '').toLowerCase()))
-				}, {
-					limit: ps.limit - users.length
-				});
+		if (users.length < ps.limit! && !ps.localOnly) {
+			const otherUsers = await Users.createQueryBuilder('user')
+				.where('user.host IS NOT NULL')
+				.andWhere('user.isSuspended = FALSE')
+				.andWhere('user.usernameLower like :username', { username: ps.query.replace('@', '').toLowerCase() + '%' })
+				.take(ps.limit! - users.length)
+				.getMany();
 
 			users = users.concat(otherUsers);
 		}
 	}
 
-	if (users.length < ps.limit) {
-		const otherUsers = await User
-			.find({
-				_id: { $nin: users.map(u => u._id) },
-				host: null,
-				name: new RegExp('^' + escapeRegexp(ps.query.toLowerCase()))
-			}, {
-				limit: ps.limit - users.length
-			});
-
-		users = users.concat(otherUsers);
-	}
-
-	if (users.length < ps.limit && !ps.localOnly) {
-		const otherUsers = await User
-			.find({
-				_id: { $nin: users.map(u => u._id) },
-				host: { $ne: null },
-				name: new RegExp('^' + escapeRegexp(ps.query.toLowerCase()))
-			}, {
-				limit: ps.limit - users.length
-			});
-
-		users = users.concat(otherUsers);
-	}
-
-	if (users.length < ps.limit) {
-		const otherUsers = await User
-			.find({
-				_id: { $nin: users.map(u => u._id) },
-				host: null,
-				name: new RegExp(escapeRegexp(ps.query.toLowerCase()))
-			}, {
-				limit: ps.limit - users.length
-			});
-
-		users = users.concat(otherUsers);
-	}
-
-	if (users.length < ps.limit && !ps.localOnly) {
-		const otherUsers = await User
-			.find({
-				_id: { $nin: users.map(u => u._id) },
-				host: { $ne: null },
-				name: new RegExp(escapeRegexp(ps.query.toLowerCase()))
-			}, {
-				limit: ps.limit - users.length
-			});
-
-		users = users.concat(otherUsers);
-	}
-
-	// Serialize
-	res(await Promise.all(users.map(user => pack(user, me, { detail: true }))));
-}));
+	return await Users.packMany(users, me, { detail: ps.detail });
+});

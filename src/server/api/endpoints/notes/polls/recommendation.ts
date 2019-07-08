@@ -1,7 +1,7 @@
 import $ from 'cafy';
-import Vote from '../../../../../models/poll-vote';
-import Note, { pack } from '../../../../../models/note';
 import define from '../../../define';
+import { Polls, Mutings, Notes, PollVotes } from '../../../../../models';
+import { Brackets, In } from 'typeorm';
 
 export const meta = {
 	desc: {
@@ -9,55 +9,64 @@ export const meta = {
 		'en-US': 'Get recommended polls.'
 	},
 
+	tags: ['notes'],
+
 	requireCredential: true,
 
 	params: {
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 10
 		},
 
 		offset: {
-			validator: $.num.optional.min(0),
+			validator: $.optional.num.min(0),
 			default: 0
 		}
 	}
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	// Get votes
-	const votes = await Vote.find({
-		userId: user._id
-	}, {
-		fields: {
-			_id: false,
-			noteId: true
-		}
+export default define(meta, async (ps, user) => {
+	const query = Polls.createQueryBuilder('poll')
+		.where('poll.userHost IS NULL')
+		.andWhere(`poll.userId != :meId`, { meId: user.id })
+		.andWhere(`poll.noteVisibility = 'public'`)
+		.andWhere(new Brackets(qb => { qb
+			.where('poll.expiresAt IS NULL')
+			.orWhere('poll.expiresAt > :now', { now: new Date() });
+		}));
+
+	//#region exclude arleady voted polls
+	const votedQuery = PollVotes.createQueryBuilder('vote')
+		.select('vote.noteId')
+		.where('vote.userId = :meId', { meId: user.id });
+
+	query
+		.andWhere(`poll.noteId NOT IN (${ votedQuery.getQuery() })`);
+
+	query.setParameters(votedQuery.getParameters());
+	//#endregion
+
+	//#region mute
+	const mutingQuery = Mutings.createQueryBuilder('muting')
+		.select('muting.muteeId')
+		.where('muting.muterId = :muterId', { muterId: user.id });
+
+	query
+		.andWhere(`poll.userId NOT IN (${ mutingQuery.getQuery() })`);
+
+	query.setParameters(mutingQuery.getParameters());
+	//#endregion
+
+	const polls = await query.take(ps.limit!).skip(ps.offset).getMany();
+
+	if (polls.length === 0) return [];
+
+	const notes = await Notes.find({
+		id: In(polls.map(poll => poll.noteId))
 	});
 
-	const nin = votes && votes.length != 0 ? votes.map(v => v.noteId) : [];
-
-	const notes = await Note
-		.find({
-			_id: {
-				$nin: nin
-			},
-			userId: {
-				$ne: user._id
-			},
-			poll: {
-				$exists: true,
-				$ne: null
-			}
-		}, {
-			limit: ps.limit,
-			skip: ps.offset,
-			sort: {
-				_id: -1
-			}
-		});
-
-	res(await Promise.all(notes.map(note => pack(note, user, {
+	return await Notes.packMany(notes, user, {
 		detail: true
-	}))));
-}));
+	});
+});

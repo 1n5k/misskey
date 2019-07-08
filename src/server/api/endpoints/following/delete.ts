@@ -1,9 +1,11 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../misc/cafy-id';
-const ms = require('ms');
-import User, { pack } from '../../../../models/user';
-import Following from '../../../../models/following';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
+import * as ms from 'ms';
 import deleteFollowing from '../../../../services/following/delete';
 import define from '../../define';
+import { ApiError } from '../../error';
+import { getUser } from '../../common/getters';
+import { Followings, Users } from '../../../../models';
 
 export const meta = {
 	stability: 'stable',
@@ -13,6 +15,8 @@ export const meta = {
 		'en-US': 'Unfollow a user.'
 	},
 
+	tags: ['following', 'users'],
+
 	limit: {
 		duration: ms('1hour'),
 		max: 100
@@ -20,55 +24,64 @@ export const meta = {
 
 	requireCredential: true,
 
-	kind: 'following-write',
+	kind: 'write:following',
 
 	params: {
 		userId: {
 			validator: $.type(ID),
-			transform: transform,
 			desc: {
 				'ja-JP': '対象のユーザーのID',
 				'en-US': 'Target user ID'
 			}
 		}
+	},
+
+	errors: {
+		noSuchUser: {
+			message: 'No such user.',
+			code: 'NO_SUCH_USER',
+			id: '5b12c78d-2b28-4dca-99d2-f56139b42ff8'
+		},
+
+		followeeIsYourself: {
+			message: 'Followee is yourself.',
+			code: 'FOLLOWEE_IS_YOURSELF',
+			id: 'd9e400b9-36b0-4808-b1d8-79e707f1296c'
+		},
+
+		notFollowing: {
+			message: 'You are not following that user.',
+			code: 'NOT_FOLLOWING',
+			id: '5dbf82f5-c92b-40b1-87d1-6c8c0741fd09'
+		},
 	}
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
+export default define(meta, async (ps, user) => {
 	const follower = user;
 
 	// Check if the followee is yourself
-	if (user._id.equals(ps.userId)) {
-		return rej('followee is yourself');
+	if (user.id === ps.userId) {
+		throw new ApiError(meta.errors.followeeIsYourself);
 	}
 
 	// Get followee
-	const followee = await User.findOne({
-		_id: ps.userId
-	}, {
-		fields: {
-			data: false,
-			'profile': false
-		}
+	const followee = await getUser(ps.userId).catch(e => {
+		if (e.id === '15348ddd-432d-49c2-8a5a-8069753becff') throw new ApiError(meta.errors.noSuchUser);
+		throw e;
 	});
-
-	if (followee === null) {
-		return rej('user not found');
-	}
 
 	// Check not following
-	const exist = await Following.findOne({
-		followerId: follower._id,
-		followeeId: followee._id
+	const exist = await Followings.findOne({
+		followerId: follower.id,
+		followeeId: followee.id
 	});
 
-	if (exist === null) {
-		return rej('already not following');
+	if (exist == null) {
+		throw new ApiError(meta.errors.notFollowing);
 	}
 
-	// Delete following
 	await deleteFollowing(follower, followee);
 
-	// Send response
-	res(await pack(followee._id, user));
-}));
+	return await Users.pack(followee.id, user);
+});

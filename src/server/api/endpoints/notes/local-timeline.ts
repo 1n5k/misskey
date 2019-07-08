@@ -1,39 +1,39 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../misc/cafy-id';
-import Note from '../../../../models/note';
-import Mute from '../../../../models/mute';
-import { packMany } from '../../../../models/note';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
 import define from '../../define';
-import { countIf } from '../../../../prelude/array';
+import { fetchMeta } from '../../../../misc/fetch-meta';
+import { ApiError } from '../../error';
+import { Notes } from '../../../../models';
+import { generateMuteQuery } from '../../common/generate-mute-query';
+import { makePaginationQuery } from '../../common/make-pagination-query';
+import { generateVisibilityQuery } from '../../common/generate-visibility-query';
+import { activeUsersChart } from '../../../../services/chart';
+import { Brackets } from 'typeorm';
 
 export const meta = {
 	desc: {
 		'ja-JP': 'ローカルタイムラインを取得します。'
 	},
 
+	tags: ['notes'],
+
 	params: {
 		withFiles: {
-			validator: $.bool.optional,
+			validator: $.optional.bool,
 			desc: {
 				'ja-JP': 'ファイルが添付された投稿に限定するか否か'
 			}
 		},
 
-		mediaOnly: {
-			validator: $.bool.optional,
-			desc: {
-				'ja-JP': 'ファイルが添付された投稿に限定するか否か (このパラメータは廃止予定です。代わりに withFiles を使ってください。)'
-			}
-		},
-
 		fileType: {
-			validator: $.arr($.str).optional,
+			validator: $.optional.arr($.str),
 			desc: {
 				'ja-JP': '指定された種類のファイルが添付された投稿のみを取得します'
 			}
 		},
 
 		excludeNsfw: {
-			validator: $.bool.optional,
+			validator: $.optional.bool,
 			default: false,
 			desc: {
 				'ja-JP': 'true にすると、NSFW指定されたファイルを除外します(fileTypeが指定されている場合のみ有効)'
@@ -41,116 +41,94 @@ export const meta = {
 		},
 
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 10
 		},
 
 		sinceId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		untilId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		sinceDate: {
-			validator: $.num.optional,
+			validator: $.optional.num,
 		},
 
 		untilDate: {
-			validator: $.num.optional,
+			validator: $.optional.num,
+		},
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'Note',
+		}
+	},
+
+	errors: {
+		ltlDisabled: {
+			message: 'Local timeline has been disabled.',
+			code: 'LTL_DISABLED',
+			id: '45a6eb02-7695-4393-b023-dd3be9aaaefd'
 		},
 	}
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	// Check if only one of sinceId, untilId, sinceDate, untilDate specified
-	if (countIf(x => x != null, [ps.sinceId, ps.untilId, ps.sinceDate, ps.untilDate]) > 1) {
-		return rej('only one of sinceId, untilId, sinceDate, untilDate can be specified');
-	}
-
-	// ミュートしているユーザーを取得
-	const mutedUserIds = user ? (await Mute.find({
-		muterId: user._id
-	})).map(m => m.muteeId) : null;
-
-	//#region Construct query
-	const sort = {
-		_id: -1
-	};
-
-	const query = {
-		deletedAt: null,
-
-		// public only
-		visibility: 'public',
-
-		// local
-		'_user.host': null
-	} as any;
-
-	if (mutedUserIds && mutedUserIds.length > 0) {
-		query.userId = {
-			$nin: mutedUserIds
-		};
-
-		query['_reply.userId'] = {
-			$nin: mutedUserIds
-		};
-
-		query['_renote.userId'] = {
-			$nin: mutedUserIds
-		};
-	}
-
-	const withFiles = ps.withFiles != null ? ps.withFiles : ps.mediaOnly;
-
-	if (withFiles) {
-		query.fileIds = { $exists: true, $ne: [] };
-	}
-
-	if (ps.fileType) {
-		query.fileIds = { $exists: true, $ne: [] };
-
-		query['_files.contentType'] = {
-			$in: ps.fileType
-		};
-
-		if (ps.excludeNsfw) {
-			query['_files.metadata.isSensitive'] = {
-				$ne: true
-			};
+export default define(meta, async (ps, user) => {
+	const m = await fetchMeta();
+	if (m.disableLocalTimeline) {
+		if (user == null || (!user.isAdmin && !user.isModerator)) {
+			throw new ApiError(meta.errors.ltlDisabled);
 		}
 	}
 
-	if (ps.sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: ps.sinceId
-		};
-	} else if (ps.untilId) {
-		query._id = {
-			$lt: ps.untilId
-		};
-	} else if (ps.sinceDate) {
-		sort._id = 1;
-		query.createdAt = {
-			$gt: new Date(ps.sinceDate)
-		};
-	} else if (ps.untilDate) {
-		query.createdAt = {
-			$lt: new Date(ps.untilDate)
-		};
+	//#region Construct query
+	const query = makePaginationQuery(Notes.createQueryBuilder('note'),
+			ps.sinceId, ps.untilId, ps.sinceDate, ps.untilDate)
+		.andWhere('(note.visibility = \'public\') AND (note.userHost IS NULL)')
+		.leftJoinAndSelect('note.user', 'user');
+
+	if (user) generateVisibilityQuery(query, user);
+	if (user) generateMuteQuery(query, user);
+
+	if (ps.withFiles) {
+		query.andWhere('note.fileIds != \'{}\'');
+	}
+
+	if (ps.fileType != null) {
+		query.andWhere('note.fileIds != \'{}\'');
+		query.andWhere(new Brackets(qb => {
+			for (const type of ps.fileType!) {
+				const i = ps.fileType!.indexOf(type);
+				qb.orWhere(`:type${i} = ANY(note.attachedFileTypes)`, { [`type${i}`]: type });
+			}
+		}));
+
+		if (ps.excludeNsfw) {
+			// v11 TODO
+			/*
+			query['_files.isSensitive'] = {
+				$ne: true
+			};
+			*/
+		}
 	}
 	//#endregion
 
-	const timeline = await Note
-		.find(query, {
-			limit: ps.limit,
-			sort: sort
-		});
+	const timeline = await query.take(ps.limit!).getMany();
 
-	res(await packMany(timeline, user));
-}));
+	process.nextTick(() => {
+		if (user) {
+			activeUsersChart.update(user);
+		}
+	});
+
+	return await Notes.packMany(timeline, user);
+});

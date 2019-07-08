@@ -1,6 +1,8 @@
 import $ from 'cafy';
-import UserList, { pack } from '../../../../../models/user-list';
 import define from '../../../define';
+import { UserLists } from '../../../../../models';
+import { genId } from '../../../../../misc/gen-id';
+import { UserList } from '../../../../../models/entities/user-list';
 
 export const meta = {
 	desc: {
@@ -8,26 +10,32 @@ export const meta = {
 		'en-US': 'Create a user list'
 	},
 
+	tags: ['lists'],
+
 	requireCredential: true,
 
-	kind: 'account-write',
+	kind: 'write:account',
 
 	params: {
-		title: {
+		name: {
 			validator: $.str.range(1, 100)
 		}
-	}
+	},
+
+	res: {
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		ref: 'UserList',
+	},
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	// insert
-	const userList = await UserList.insert({
+export default define(meta, async (ps, user) => {
+	const userList = await UserLists.save({
+		id: genId(),
 		createdAt: new Date(),
-		userId: user._id,
-		title: ps.title,
-		userIds: []
-	});
+		userId: user.id,
+		name: ps.name,
+	} as UserList);
 
-	// Response
-	res(await pack(userList));
-}));
+	return await UserLists.pack(userList);
+});

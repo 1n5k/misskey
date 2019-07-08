@@ -30,13 +30,13 @@
 				<x-folder v-for="folder in folders" :key="folder.id" class="folder" :folder="folder"/>
 				<!-- SEE: https://stackoverflow.com/questions/18744164/flex-box-align-last-row-to-grid -->
 				<div class="padding" v-for="n in 16"></div>
-				<button v-if="moreFolders">{{ $t('@.load-more') }}</button>
+				<ui-button v-if="moreFolders">{{ $t('@.load-more') }}</ui-button>
 			</div>
 			<div class="files" ref="filesContainer" v-if="files.length > 0">
 				<x-file v-for="file in files" :key="file.id" class="file" :file="file"/>
 				<!-- SEE: https://stackoverflow.com/questions/18744164/flex-box-align-last-row-to-grid -->
 				<div class="padding" v-for="n in 16"></div>
-				<button v-if="moreFiles" @click="fetchMoreFiles">{{ $t('@.load-more') }}</button>
+				<ui-button v-if="moreFiles" @click="fetchMoreFiles">{{ $t('@.load-more') }}</ui-button>
 			</div>
 			<div class="empty" v-if="files.length == 0 && folders.length == 0 && !fetching">
 				<p v-if="draghover">{{ $t('empty-draghover') }}</p>
@@ -66,6 +66,7 @@ import XFolder from './drive.folder.vue';
 import XFile from './drive.file.vue';
 import contains from '../../../common/scripts/contains';
 import { url } from '../../../config';
+import { faCloudUploadAlt } from '@fortawesome/free-solid-svg-icons';
 
 export default Vue.extend({
 	i18n: i18n('desktop/views/components/drive.vue'),
@@ -78,6 +79,11 @@ export default Vue.extend({
 		initFolder: {
 			type: Object,
 			required: false
+		},
+		type: {
+			type: String,
+			required: false,
+			default: undefined 
 		},
 		multiple: {
 			type: Boolean,
@@ -149,7 +155,7 @@ export default Vue.extend({
 			}, {
 				type: 'item',
 				text: this.$t('contextmenu.url-upload'),
-				icon: 'cloud-upload-alt',
+				icon: faCloudUploadAlt,
 				action: this.urlUpload
 			}]);
 		},
@@ -277,9 +283,9 @@ export default Vue.extend({
 
 			// ドロップされてきたものがファイルだったら
 			if (e.dataTransfer.files.length > 0) {
-				Array.from(e.dataTransfer.files).forEach(file => {
+				for (const file of Array.from(e.dataTransfer.files)) {
 					this.upload(file, this.folder);
-				});
+				}
 				return;
 			}
 
@@ -313,16 +319,16 @@ export default Vue.extend({
 				}).catch(err => {
 					switch (err) {
 						case 'detected-circular-definition':
-							this.$dialog({
+							this.$root.dialog({
 								title: this.$t('unable-to-process'),
-								text: this.$t('circular-reference-detected'),
-								actions: [{
-									text: this.$t('@.ok')
-								}]
+								text: this.$t('circular-reference-detected')
 							});
 							break;
 						default:
-							alert(`%i18n:@unhandled-error% ${err}`);
+							this.$root.dialog({
+								type: 'error',
+								text: this.$t('unhandled-error')
+							});
 					}
 				});
 			}
@@ -334,30 +340,33 @@ export default Vue.extend({
 		},
 
 		urlUpload() {
-			this.$input({
+			this.$root.dialog({
 				title: this.$t('url-upload'),
-				placeholder: this.$t('url-of-file')
-			}).then(url => {
+				input: {
+					placeholder: this.$t('url-of-file')
+				}
+			}).then(({ canceled, result: url }) => {
+				if (canceled) return;
 				this.$root.api('drive/files/upload_from_url', {
 					url: url,
 					folderId: this.folder ? this.folder.id : undefined
 				});
 
-				this.$dialog({
+				this.$root.dialog({
 					title: this.$t('url-upload-requested'),
-					text: this.$t('may-take-time'),
-					actions: [{
-						text: this.$t('@.ok')
-					}]
+					text: this.$t('may-take-time')
 				});
 			});
 		},
 
 		createFolder() {
-			this.$input({
+			this.$root.dialog({
 				title: this.$t('create-folder'),
-				placeholder: this.$t('folder-name')
-			}).then(name => {
+				input: {
+					placeholder: this.$t('folder-name')
+				}
+			}).then(({ canceled, result: name }) => {
+				if (canceled) return;
 				this.$root.api('drive/folders/create', {
 					name: name,
 					parentId: this.folder ? this.folder.id : undefined
@@ -368,9 +377,9 @@ export default Vue.extend({
 		},
 
 		onChangeFileInput() {
-			Array.from((this.$refs.fileInput as any).files).forEach(file => {
+			for (const file of Array.from((this.$refs.fileInput as any).files)) {
 				this.upload(file, this.folder);
-			});
+			}
 		},
 
 		upload(file, folder) {
@@ -536,6 +545,7 @@ export default Vue.extend({
 			// ファイル一覧取得
 			this.$root.api('drive/files', {
 				folderId: this.folder ? this.folder.id : null,
+				type: this.type,
 				limit: filesMax + 1
 			}).then(files => {
 				if (files.length == filesMax + 1) {
@@ -549,8 +559,8 @@ export default Vue.extend({
 			let flag = false;
 			const complete = () => {
 				if (flag) {
-					fetchedFolders.forEach(this.appendFolder);
-					fetchedFiles.forEach(this.appendFile);
+					for (const x of fetchedFolders) this.appendFolder(x);
+					for (const x of fetchedFiles) this.appendFile(x);
 					this.fetching = false;
 				} else {
 					flag = true;
@@ -566,6 +576,7 @@ export default Vue.extend({
 			// ファイル一覧取得
 			this.$root.api('drive/files', {
 				folderId: this.folder ? this.folder.id : null,
+				type: this.type,
 				untilId: this.files[this.files.length - 1].id,
 				limit: max + 1
 			}).then(files => {
@@ -575,7 +586,7 @@ export default Vue.extend({
 				} else {
 					this.moreFiles = false;
 				}
-				files.forEach(this.appendFile);
+				for (const x of files) this.appendFile(x);
 				this.fetching = false;
 			});
 		}
@@ -746,12 +757,17 @@ export default Vue.extend({
 				bottom 0
 				animation-delay -1.0s
 
-			@keyframes sk-rotate { 100% { transform: rotate(360deg); }}
+			@keyframes sk-rotate {
+				100% {
+					transform: rotate(360deg);
+				}
+			}
 
 			@keyframes sk-bounce {
 				0%, 100% {
 					transform: scale(0.0);
-				} 50% {
+				}
+				50% {
 					transform: scale(1.0);
 				}
 			}
@@ -768,7 +784,6 @@ export default Vue.extend({
 	> .mk-uploader
 		height 100px
 		padding 16px
-		background #fff
 
 	> input
 		display none

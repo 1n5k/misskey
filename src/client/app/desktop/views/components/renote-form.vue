@@ -5,11 +5,12 @@
 		<footer>
 			<a class="quote" v-if="!quote" @click="onQuote">{{ $t('quote') }}</a>
 			<ui-button class="button cancel" inline @click="cancel">{{ $t('cancel') }}</ui-button>
-			<ui-button class="button ok" inline primary @click="ok" :disabled="wait">{{ wait ? this.$t('reposting') : this.$t('renote') }}</ui-button>
+			<ui-button class="button home" inline :primary="visibility != 'public'" @click="ok('home')"   :disabled="wait">{{ wait ? this.$t('reposting') : this.$t('renote-home') }}</ui-button>
+			<ui-button class="button ok"   inline :primary="visibility == 'public'" @click="ok('public')" :disabled="wait">{{ wait ? this.$t('reposting') : this.$t('renote') }}</ui-button>
 		</footer>
 	</template>
 	<template v-if="quote">
-		<mk-post-form ref="form" :renote="note" @posted="onChildFormPosted"/>
+		<x-post-form ref="form" :renote="note" @posted="onChildFormPosted"/>
 	</template>
 </div>
 </template>
@@ -20,18 +21,32 @@ import i18n from '../../../i18n';
 
 export default Vue.extend({
 	i18n: i18n('desktop/views/components/renote-form.vue'),
-	props: ['note'],
+
+	components: {
+		XPostForm: () => import('./post-form.vue').then(m => m.default)
+	},
+
+	props: {
+		note: {
+			type: Object,
+			required: true
+		}
+	},
+
 	data() {
 		return {
 			wait: false,
-			quote: false
+			quote: false,
+			visibility: this.$store.state.settings.defaultNoteVisibility
 		};
 	},
+
 	methods: {
-		ok() {
+		ok(v: string) {
 			this.wait = true;
 			this.$root.api('notes/create', {
-				renoteId: this.note.id
+				renoteId: this.note.id,
+				visibility: v || this.visibility
 			}).then(data => {
 				this.$emit('posted');
 				this.$notify(this.$t('success'));
@@ -41,9 +56,11 @@ export default Vue.extend({
 				this.wait = false;
 			});
 		},
+
 		cancel() {
 			this.$emit('canceled');
 		},
+
 		onQuote() {
 			this.quote = true;
 
@@ -51,6 +68,7 @@ export default Vue.extend({
 				(this.$refs.form as any).focus();
 			});
 		},
+
 		onChildFormPosted() {
 			this.$emit('posted');
 		}
@@ -81,7 +99,11 @@ export default Vue.extend({
 			height 40px
 
 			&.cancel
+				right 280px
+
+			&.home
 				right 148px
+				font-size 13px
 
 			&.ok
 				right 16px

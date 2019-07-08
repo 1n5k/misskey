@@ -1,15 +1,16 @@
 <template>
-<div class="ui-select" :class="[{ focused, filled }, styl]">
+<div class="ui-select" :class="[{ focused, disabled, filled, inline }, styl]">
 	<div class="icon" ref="icon"><slot name="icon"></slot></div>
 	<div class="input" @click="focus">
 		<span class="label" ref="label"><slot name="label"></slot></span>
 		<div class="prefix" ref="prefix"><slot name="prefix"></slot></div>
 		<select ref="input"
-				:value="v"
-				:required="required"
-				@input="$emit('input', $event.target.value)"
-				@focus="focused = true"
-				@blur="focused = false">
+			v-model="v"
+			:required="required"
+			:disabled="disabled"
+			@focus="focused = true"
+			@blur="focused = false"
+		>
 			<slot></slot>
 		</select>
 		<div class="suffix"><slot name="suffix"></slot></div>
@@ -22,6 +23,11 @@
 import Vue from 'vue';
 
 export default Vue.extend({
+	inject: {
+		horizonGrouped: {
+			default: false
+		}
+	},
 	props: {
 		value: {
 			required: false
@@ -30,26 +36,39 @@ export default Vue.extend({
 			type: Boolean,
 			required: false
 		},
+		disabled: {
+			type: Boolean,
+			required: false
+		},
 		styl: {
 			type: String,
 			required: false,
 			default: 'line'
-		}
+		},
+		inline: {
+			type: Boolean,
+			required: false,
+			default(): boolean {
+				return this.horizonGrouped;
+			}
+		},
 	},
 	data() {
 		return {
-			v: this.value,
 			focused: false
 		};
 	},
 	computed: {
+		v: {
+			get() {
+				return this.value;
+			},
+			set(v) {
+				this.$emit('input', v);
+			}
+		},
 		filled(): boolean {
 			return this.v != '' && this.v != null;
-		}
-	},
-	watch: {
-		value(v) {
-			this.v = v;
 		}
 	},
 	mounted() {
@@ -76,7 +95,7 @@ root(fill)
 		width 24px
 		text-align center
 		line-height 32px
-		color rgba(#000, 0.54)
+		color var(--inputLabel)
 
 		&:not(:empty) + .input
 			margin-left 28px
@@ -122,7 +141,7 @@ root(fill)
 			transition-duration 0.3s
 			font-size 16px
 			line-height 32px
-			color rgba(#000, 0.54)
+			color var(--inputLabel)
 			pointer-events none
 			//will-change transform
 			transform-origin top left
@@ -171,6 +190,9 @@ root(fill)
 		margin 6px 0
 		font-size 13px
 
+		&:empty
+			display none
+
 		*
 			margin 0
 
@@ -199,5 +221,15 @@ root(fill)
 		root(true)
 	&:not(.fill)
 		root(false)
+
+	&.inline
+		display inline-block
+		margin 0
+
+	&.disabled
+		opacity 0.7
+
+		&, *
+			cursor not-allowed !important
 
 </style>

@@ -1,33 +1,36 @@
 import $ from 'cafy';
-import Emoji from '../../../../../models/emoji';
 import define from '../../../define';
+import { Emojis } from '../../../../../models';
+import { toPunyNullable } from '../../../../../misc/convert-host';
 
 export const meta = {
 	desc: {
 		'ja-JP': 'カスタム絵文字を取得します。'
 	},
 
+	tags: ['admin'],
+
 	requireCredential: true,
-	requireAdmin: true,
+	requireModerator: true,
 
 	params: {
 		host: {
-			validator: $.str.optional.nullable,
+			validator: $.optional.nullable.str,
 			default: null as any
 		}
 	}
 };
 
-export default define(meta, (ps) => new Promise(async (res, rej) => {
-	const emojis = await Emoji.find({
-		host: ps.host
+export default define(meta, async (ps) => {
+	const emojis = await Emojis.find({
+		host: toPunyNullable(ps.host)
 	});
 
-	res(emojis.map(e => ({
-		id: e._id,
+	return emojis.map(e => ({
+		id: e.id,
 		name: e.name,
 		aliases: e.aliases,
 		host: e.host,
 		url: e.url
-	})));
-}));
+	}));
+});

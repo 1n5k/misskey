@@ -3,7 +3,7 @@
 </template>
 
 <script lang="ts">
-import { clientVersion as version, codename } from '../../../config';
+import { version, codename } from '../../../config';
 import define from '../../../common/define-widget';
 export default define({
 	name: 'version'
@@ -24,6 +24,7 @@ p
 	padding 0 12px
 	text-align center
 	font-size 0.7em
-	color #aaa
+	color var(--text)
+	opacity 0.8
 
 </style>

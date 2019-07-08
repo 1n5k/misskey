@@ -1,12 +1,11 @@
-import * as debug from 'debug';
-import Emoji from "../models/emoji";
-
-debug.enable('*');
+import { Emojis } from '../models';
+import { genId } from '../misc/gen-id';
 
 async function main(name: string, url: string, alias?: string): Promise<any> {
 	const aliases = alias != null ? [ alias ] : [];
 
-	await Emoji.insert({
+	await Emojis.save({
+		id: genId(),
 		host: null,
 		name,
 		url,
@@ -19,8 +18,8 @@ const args = process.argv.slice(2);
 const name = args[0];
 const url = args[1];
 
-if (!name) throw 'require name';
-if (!url) throw 'require url';
+if (!name) throw new Error('require name');
+if (!url) throw new Error('require url');
 
 main(name, url).then(() => {
 	console.log('success');

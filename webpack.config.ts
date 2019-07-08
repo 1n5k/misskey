@@ -6,93 +6,47 @@ import * as fs from 'fs';
 import * as webpack from 'webpack';
 import chalk from 'chalk';
 const { VueLoaderPlugin } = require('vue-loader');
-const WebpackOnBuildPlugin = require('on-build-webpack');
 //const HardSourceWebpackPlugin = require('hard-source-webpack-plugin');
 const ProgressBarPlugin = require('progress-bar-webpack-plugin');
+const TerserPlugin = require('terser-webpack-plugin');
+
+class WebpackOnBuildPlugin {
+	constructor(readonly callback: (stats: any) => void) {
+	}
+
+	public apply(compiler: any) {
+		compiler.hooks.done.tap('WebpackOnBuildPlugin', this.callback);
+	}
+}
+
+const isProduction = process.env.NODE_ENV == 'production';
 
 const constants = require('./src/const.json');
 
 const locales = require('./locales');
 const meta = require('./package.json');
-const version = meta.clientVersion;
 const codename = meta.codename;
 
-const langs = Object.keys(locales);
-
-const isProduction = process.env.NODE_ENV == 'production';
-
-// Entries
-const entry = {
-	desktop: './src/client/app/desktop/script.ts',
-	mobile: './src/client/app/mobile/script.ts',
-	dev: './src/client/app/dev/script.ts',
-	auth: './src/client/app/auth/script.ts',
-	admin: './src/client/app/admin/script.ts',
-	sw: './src/client/app/sw.js'
+const postcss = {
+	loader: 'postcss-loader',
+	options: {
+		plugins: [
+			require('cssnano')({
+				preset: 'default'
+			})
+		]
+	},
 };
-
-const output = {
-	path: __dirname + '/built/client/assets',
-	filename: `[name].${version}.-.js`
-};
-
-//#region Define consts
-const consts = {
-	_THEME_COLOR_: constants.themeColor,
-	_COPYRIGHT_: constants.copyright,
-	_VERSION_: meta.version,
-	_CLIENT_VERSION_: version,
-	_CODENAME_: codename,
-	_LANG_: '%lang%',
-	_LANGS_: Object.keys(locales).map(l => [l, locales[l].meta.lang]),
-	_LOCALE_: '%locale%',
-	_ENV_: process.env.NODE_ENV
-};
-
-const _consts: { [ key: string ]: any } = {};
-
-Object.keys(consts).forEach(key => {
-	_consts[key] = JSON.stringify((consts as any)[key]);
-});
-//#endregion
-
-const plugins = [
-	//new HardSourceWebpackPlugin(),
-	new ProgressBarPlugin({
-		format: chalk`  {cyan.bold yes we can} {bold [}:bar{bold ]} {green.bold :percent} {gray (:current/:total)} :elapseds`,
-		clear: false
-	}),
-	new webpack.DefinePlugin(_consts),
-	new webpack.DefinePlugin({
-		'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development')
-	}),
-	new WebpackOnBuildPlugin((stats: any) => {
-		fs.writeFileSync('./built/client/meta.json', JSON.stringify({
-			version
-		}), 'utf-8');
-
-		//#region i18n
-		langs.forEach(lang => {
-			Object.keys(entry).forEach(file => {
-				let src = fs.readFileSync(`${__dirname}/built/client/assets/${file}.${version}.-.js`, 'utf-8');
-
-				src = src.replace('%lang%', lang);
-				src = src.replace('"%locale%"', JSON.stringify(locales[lang]));
-
-				fs.writeFileSync(`${__dirname}/built/client/assets/${file}.${version}.${lang}.js`, src, 'utf-8');
-			});
-		});
-		//#endregion
-	}),
-	new VueLoaderPlugin()
-];
-
-if (isProduction) {
-	plugins.push(new webpack.optimize.ModuleConcatenationPlugin());
-}
 
 module.exports = {
-	entry,
+	entry: {
+		desktop: './src/client/app/desktop/script.ts',
+		mobile: './src/client/app/mobile/script.ts',
+		dev: './src/client/app/dev/script.ts',
+		auth: './src/client/app/auth/script.ts',
+		admin: './src/client/app/admin/script.ts',
+		sw: './src/client/app/sw.js'
+	},
 	module: {
 		rules: [{
 			test: /\.vue$/,
@@ -118,21 +72,17 @@ module.exports = {
 				}, {
 					loader: 'css-loader',
 					options: {
-						modules: true,
-						minimize: true
+						modules: true
 					}
-				}, {
+				}, postcss, {
 					loader: 'stylus-loader'
 				}]
 			}, {
 				use: [{
 					loader: 'vue-style-loader'
 				}, {
-					loader: 'css-loader',
-					options: {
-						minimize: true
-					}
-				}, {
+					loader: 'css-loader'
+				}, postcss, {
 					loader: 'stylus-loader'
 				}]
 			}]
@@ -141,13 +91,10 @@ module.exports = {
 			use: [{
 				loader: 'vue-style-loader'
 			}, {
-				loader: 'css-loader',
-				options: {
-					minimize: true
-				}
-			}]
+				loader: 'css-loader'
+			}, postcss]
 		}, {
-			test: /\.(eot|woff|woff2|svg|ttf)([\?]?.*)$/,
+			test: /\.(eot|woff|woff2|svg|ttf)([?]?.*)$/,
 			loader: 'url-loader'
 		}, {
 			test: /\.json5$/,
@@ -165,8 +112,38 @@ module.exports = {
 			}]
 		}]
 	},
-	plugins,
-	output,
+	plugins: [
+		//new HardSourceWebpackPlugin(),
+		new ProgressBarPlugin({
+			format: chalk`  {cyan.bold yes we can} {bold [}:bar{bold ]} {green.bold :percent} {gray (:current/:total)} :elapseds`,
+			clear: false
+		}),
+		new webpack.DefinePlugin({
+			_COPYRIGHT_: JSON.stringify(constants.copyright),
+			_VERSION_: JSON.stringify(meta.version),
+			_CODENAME_: JSON.stringify(codename),
+			_LANGS_: JSON.stringify(Object.entries(locales).map(([k, v]: [string, any]) => [k, v && v.meta && v.meta.lang])),
+			_ENV_: JSON.stringify(process.env.NODE_ENV)
+		}),
+		new webpack.DefinePlugin({
+			'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development')
+		}),
+		new WebpackOnBuildPlugin((stats: any) => {
+			fs.writeFileSync('./built/client/meta.json', JSON.stringify({ version: meta.version }), 'utf-8');
+
+			fs.mkdirSync('./built/client/assets/locales', { recursive: true });
+
+			for (const [lang, locale] of Object.entries(locales))
+				fs.writeFileSync(`./built/client/assets/locales/${lang}.json`, JSON.stringify(locale), 'utf-8');
+		}),
+		new VueLoaderPlugin(),
+		new webpack.optimize.ModuleConcatenationPlugin()
+	],
+	output: {
+		path: __dirname + '/built/client/assets',
+		filename: `[name].${meta.version}.js`,
+		publicPath: `/assets/`
+	},
 	resolve: {
 		extensions: [
 			'.js', '.ts', '.json'
@@ -177,6 +154,9 @@ module.exports = {
 	},
 	resolveLoader: {
 		modules: ['node_modules']
+	},
+	optimization: {
+		minimizer: [new TerserPlugin()]
 	},
 	cache: true,
 	devtool: false, //'source-map',

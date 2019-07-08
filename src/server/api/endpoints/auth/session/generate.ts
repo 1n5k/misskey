@@ -1,43 +1,81 @@
 import * as uuid from 'uuid';
 import $ from 'cafy';
-import App from '../../../../../models/app';
-import AuthSess from '../../../../../models/auth-session';
 import config from '../../../../../config';
 import define from '../../../define';
+import { ApiError } from '../../../error';
+import { Apps, AuthSessions } from '../../../../../models';
+import { genId } from '../../../../../misc/gen-id';
 
 export const meta = {
+	tags: ['auth'],
+
 	requireCredential: false,
+
+	desc: {
+		'ja-JP': 'アプリを認証するためのトークンを作成します。',
+		'en-US': 'Generate a token for authorize application.'
+	},
 
 	params: {
 		appSecret: {
-			validator: $.str
+			validator: $.str,
+			desc: {
+				'ja-JP': 'アプリケーションのシークレットキー',
+				'en-US': 'The secret key of your application.'
+			}
+		}
+	},
+
+	res: {
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		properties: {
+			token: {
+				type: 'string' as const,
+				optional: false as const, nullable: false as const,
+				description: 'セッションのトークン'
+			},
+			url: {
+				type: 'string' as const,
+				optional: false as const, nullable: false as const,
+				format: 'url',
+				description: 'セッションのURL'
+			},
+		}
+	},
+
+	errors: {
+		noSuchApp: {
+			message: 'No such app.',
+			code: 'NO_SUCH_APP',
+			id: '92f93e63-428e-4f2f-a5a4-39e1407fe998'
 		}
 	}
 };
 
-export default define(meta, (ps) => new Promise(async (res, rej) => {
+export default define(meta, async (ps) => {
 	// Lookup app
-	const app = await App.findOne({
+	const app = await Apps.findOne({
 		secret: ps.appSecret
 	});
 
 	if (app == null) {
-		return rej('app not found');
+		throw new ApiError(meta.errors.noSuchApp);
 	}
 
 	// Generate token
 	const token = uuid.v4();
 
 	// Create session token document
-	const doc = await AuthSess.insert({
+	const doc = await AuthSessions.save({
+		id: genId(),
 		createdAt: new Date(),
-		appId: app._id,
+		appId: app.id,
 		token: token
 	});
 
-	// Response
-	res({
+	return {
 		token: doc.token,
-		url: `${config.auth_url}/${doc.token}`
-	});
-}));
+		url: `${config.authUrl}/${doc.token}`
+	};
+});

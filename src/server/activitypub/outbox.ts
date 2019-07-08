@@ -1,30 +1,33 @@
-import * as mongo from 'mongodb';
 import * as Router from 'koa-router';
 import config from '../../config';
-import $ from 'cafy'; import ID, { transform } from '../../misc/cafy-id';
-import User from '../../models/user';
-import pack from '../../remote/activitypub/renderer';
+import $ from 'cafy';
+import { ID } from '../../misc/cafy-id';
+import { renderActivity } from '../../remote/activitypub/renderer';
 import renderOrderedCollection from '../../remote/activitypub/renderer/ordered-collection';
 import renderOrderedCollectionPage from '../../remote/activitypub/renderer/ordered-collection-page';
 import { setResponseType } from '../activitypub';
-
-import Note, { INote } from '../../models/note';
 import renderNote from '../../remote/activitypub/renderer/note';
 import renderCreate from '../../remote/activitypub/renderer/create';
 import renderAnnounce from '../../remote/activitypub/renderer/announce';
 import { countIf } from '../../prelude/array';
+import * as url from '../../prelude/url';
+import { Users, Notes } from '../../models';
+import { makePaginationQuery } from '../api/common/make-pagination-query';
+import { Brackets } from 'typeorm';
+import { Note } from '../../models/entities/note';
+import { ensure } from '../../prelude/ensure';
 
 export default async (ctx: Router.IRouterContext) => {
-	const userId = new mongo.ObjectID(ctx.params.user);
+	const userId = ctx.params.user;
 
 	// Get 'sinceId' parameter
-	const [sinceId, sinceIdErr] = $.type(ID).optional.get(ctx.request.query.since_id);
+	const [sinceId, sinceIdErr] = $.optional.type(ID).get(ctx.request.query.since_id);
 
 	// Get 'untilId' parameter
-	const [untilId, untilIdErr] = $.type(ID).optional.get(ctx.request.query.until_id);
+	const [untilId, untilIdErr] = $.optional.type(ID).get(ctx.request.query.until_id);
 
 	// Get 'page' parameter
-	const pageErr = !$.str.optional.or(['true', 'false']).ok(ctx.request.query.page);
+	const pageErr = !$.optional.str.or(['true', 'false']).ok(ctx.request.query.page);
 	const page: boolean = ctx.request.query.page === 'true';
 
 	// Validate parameters
@@ -34,12 +37,12 @@ export default async (ctx: Router.IRouterContext) => {
 	}
 
 	// Verify user
-	const user = await User.findOne({
-		_id: userId,
+	const user = await Users.findOne({
+		id: userId,
 		host: null
 	});
 
-	if (user === null) {
+	if (user == null) {
 		ctx.status = 404;
 		return;
 	}
@@ -48,46 +51,37 @@ export default async (ctx: Router.IRouterContext) => {
 	const partOf = `${config.url}/users/${userId}/outbox`;
 
 	if (page) {
-		//#region Construct query
-		const sort = {
-			_id: -1
-		};
+		const query = makePaginationQuery(Notes.createQueryBuilder('note'), sinceId, untilId)
+			.andWhere('note.userId = :userId', { userId: user.id })
+			.andWhere(new Brackets(qb => { qb
+				.where(`note.visibility = 'public'`)
+				.orWhere(`note.visibility = 'home'`);
+			}))
+			.andWhere('note.localOnly = FALSE');
 
-		const query = {
-			userId: user._id,
-			visibility: { $in: ['public', 'home'] }
-		} as any;
-
-		if (sinceId) {
-			sort._id = 1;
-			query._id = {
-				$gt: transform(sinceId)
-			};
-		} else if (untilId) {
-			query._id = {
-				$lt: transform(untilId)
-			};
-		}
-		//#endregion
-
-		// Issue query
-		const notes = await Note
-			.find(query, {
-				limit: limit,
-				sort: sort
-			});
+		const notes = await query.take(limit).getMany();
 
 		if (sinceId) notes.reverse();
 
 		const activities = await Promise.all(notes.map(note => packActivity(note)));
 		const rendered = renderOrderedCollectionPage(
-			`${partOf}?page=true${sinceId ? `&since_id=${sinceId}` : ''}${untilId ? `&until_id=${untilId}` : ''}`,
+			`${partOf}?${url.query({
+				page: 'true',
+				since_id: sinceId,
+				until_id: untilId
+			})}`,
 			user.notesCount, activities, partOf,
-			notes.length > 0 ? `${partOf}?page=true&since_id=${notes[0]._id}` : null,
-			notes.length > 0 ? `${partOf}?page=true&until_id=${notes[notes.length - 1]._id}` : null
+			notes.length ? `${partOf}?${url.query({
+				page: 'true',
+				since_id: notes[0].id
+			})}` : undefined,
+			notes.length ? `${partOf}?${url.query({
+				page: 'true',
+				until_id: notes[notes.length - 1].id
+			})}` : undefined
 		);
 
-		ctx.body = pack(rendered);
+		ctx.body = renderActivity(rendered);
 		ctx.set('Cache-Control', 'private, max-age=0, must-revalidate');
 		setResponseType(ctx);
 	} else {
@@ -96,7 +90,7 @@ export default async (ctx: Router.IRouterContext) => {
 			`${partOf}?page=true`,
 			`${partOf}?page=true&since_id=000000000000000000000000`
 		);
-		ctx.body = pack(rendered);
+		ctx.body = renderActivity(rendered);
 		ctx.set('Cache-Control', 'private, max-age=0, must-revalidate');
 		setResponseType(ctx);
 	}
@@ -106,10 +100,10 @@ export default async (ctx: Router.IRouterContext) => {
  * Pack Create<Note> or Announce Activity
  * @param note Note
  */
-export async function packActivity(note: INote): Promise<object> {
-	if (note.renoteId && note.text == null && note.poll == null && (note.fileIds == null || note.fileIds.length == 0)) {
-		const renote = await Note.findOne(note.renoteId);
-		return renderAnnounce(renote.uri ? renote.uri : `${config.url}/notes/${renote._id}`, note);
+export async function packActivity(note: Note): Promise<any> {
+	if (note.renoteId && note.text == null && !note.hasPoll && (note.fileIds == null || note.fileIds.length == 0)) {
+		const renote = await Notes.findOne(note.renoteId).then(ensure);
+		return renderAnnounce(renote.uri ? renote.uri : `${config.url}/notes/${renote.id}`, note);
 	}
 
 	return renderCreate(await renderNote(note, false), note);

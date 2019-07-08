@@ -1,58 +1,55 @@
 import es from '../../db/elasticsearch';
-import Note, { pack, INote } from '../../models/note';
-import User, { isLocalUser, IUser, isRemoteUser, IRemoteUser, ILocalUser } from '../../models/user';
-import { publishMainStream, publishHomeTimelineStream, publishLocalTimelineStream, publishHybridTimelineStream, publishGlobalTimelineStream, publishUserListStream, publishHashtagStream } from '../../stream';
-import Following from '../../models/following';
+import { publishMainStream, publishNotesStream } from '../stream';
 import { deliver } from '../../queue';
 import renderNote from '../../remote/activitypub/renderer/note';
 import renderCreate from '../../remote/activitypub/renderer/create';
 import renderAnnounce from '../../remote/activitypub/renderer/announce';
-import packAp from '../../remote/activitypub/renderer';
-import DriveFile, { IDriveFile } from '../../models/drive-file';
-import notify from '../../notify';
-import NoteWatching from '../../models/note-watching';
+import { renderActivity } from '../../remote/activitypub/renderer';
 import watch from './watch';
-import Mute from '../../models/mute';
-import parse from '../../mfm/parse';
-import { IApp } from '../../models/app';
-import UserList from '../../models/user-list';
-import resolveUser from '../../remote/resolve-user';
-import Meta from '../../models/meta';
+import { parse } from '../../mfm/parse';
+import { resolveUser } from '../../remote/resolve-user';
 import config from '../../config';
-import registerHashtag from '../register-hashtag';
-import isQuote from '../../misc/is-quote';
-import { TextElementMention } from '../../mfm/parse/elements/mention';
-import { TextElementHashtag } from '../../mfm/parse/elements/hashtag';
-import notesChart from '../../chart/notes';
-import perUserNotesChart from '../../chart/per-user-notes';
-
-import { erase, unique } from '../../prelude/array';
+import { updateHashtag } from '../update-hashtag';
+import { concat } from '../../prelude/array';
 import insertNoteUnread from './unread';
-import registerInstance from '../register-instance';
-import Instance from '../../models/instance';
-import { TextElementEmoji } from '../../mfm/parse/elements/emoji';
+import { registerOrFetchInstanceDoc } from '../register-or-fetch-instance-doc';
+import extractMentions from '../../misc/extract-mentions';
+import extractEmojis from '../../misc/extract-emojis';
+import extractHashtags from '../../misc/extract-hashtags';
+import { Note } from '../../models/entities/note';
+import { Mutings, Users, NoteWatchings, Followings, Notes, Instances, UserProfiles } from '../../models';
+import { DriveFile } from '../../models/entities/drive-file';
+import { App } from '../../models/entities/app';
+import { Not, getConnection } from 'typeorm';
+import { User, ILocalUser, IRemoteUser } from '../../models/entities/user';
+import { genId } from '../../misc/gen-id';
+import { notesChart, perUserNotesChart, activeUsersChart, instanceChart } from '../chart';
+import { Poll, IPoll } from '../../models/entities/poll';
+import { createNotification } from '../create-notification';
+import { isDuplicateKeyValueError } from '../../misc/is-duplicate-key-value-error';
+import { ensure } from '../../prelude/ensure';
 
 type NotificationType = 'reply' | 'renote' | 'quote' | 'mention';
 
 class NotificationManager {
-	private notifier: IUser;
-	private note: INote;
-	private queue: Array<{
-		target: ILocalUser['_id'];
+	private notifier: User;
+	private note: Note;
+	private queue: {
+		target: ILocalUser['id'];
 		reason: NotificationType;
-	}>;
+	}[];
 
-	constructor(notifier: IUser, note: INote) {
+	constructor(notifier: User, note: Note) {
 		this.notifier = notifier;
 		this.note = note;
 		this.queue = [];
 	}
 
-	public push(notifiee: ILocalUser['_id'], reason: NotificationType) {
+	public push(notifiee: ILocalUser['id'], reason: NotificationType) {
 		// 自分自身へは通知しない
-		if (this.notifier._id.equals(notifiee)) return;
+		if (this.notifier.id === notifiee) return;
 
-		const exist = this.queue.find(x => x.target.equals(notifiee));
+		const exist = this.queue.find(x => x.target === notifiee);
 
 		if (exist) {
 			// 「メンションされているかつ返信されている」場合は、メンションとしての通知ではなく返信としての通知にする
@@ -67,159 +64,149 @@ class NotificationManager {
 		}
 	}
 
-	public deliver() {
-		this.queue.forEach(async x => {
+	public async deliver() {
+		for (const x of this.queue) {
 			// ミュート情報を取得
-			const mentioneeMutes = await Mute.find({
+			const mentioneeMutes = await Mutings.find({
 				muterId: x.target
 			});
 
-			const mentioneesMutedUserIds = mentioneeMutes.map(m => m.muteeId.toString());
+			const mentioneesMutedUserIds = mentioneeMutes.map(m => m.muteeId);
 
 			// 通知される側のユーザーが通知する側のユーザーをミュートしていない限りは通知する
-			if (!mentioneesMutedUserIds.includes(this.notifier._id.toString())) {
-				notify(x.target, this.notifier._id, x.reason, {
-					noteId: this.note._id
+			if (!mentioneesMutedUserIds.includes(this.notifier.id)) {
+				createNotification(x.target, this.notifier.id, x.reason, {
+					noteId: this.note.id
 				});
 			}
-		});
+		}
 	}
 }
 
 type Option = {
-	createdAt?: Date;
-	text?: string;
-	reply?: INote;
-	renote?: INote;
-	files?: IDriveFile[];
-	geo?: any;
-	poll?: any;
-	viaMobile?: boolean;
-	cw?: string;
+	createdAt?: Date | null;
+	name?: string | null;
+	text?: string | null;
+	reply?: Note | null;
+	renote?: Note | null;
+	files?: DriveFile[] | null;
+	geo?: any | null;
+	poll?: IPoll | null;
+	viaMobile?: boolean | null;
+	localOnly?: boolean | null;
+	cw?: string | null;
 	visibility?: string;
-	visibleUsers?: IUser[];
-	apMentions?: IUser[];
-	uri?: string;
-	app?: IApp;
+	visibleUsers?: User[] | null;
+	apMentions?: User[] | null;
+	apHashtags?: string[] | null;
+	apEmojis?: string[] | null;
+	questionUri?: string | null;
+	uri?: string | null;
+	app?: App | null;
 };
 
-export default async (user: IUser, data: Option, silent = false) => new Promise<INote>(async (res, rej) => {
-	const isFirstNote = user.notesCount === 0;
-
+export default async (user: User, data: Option, silent = false) => new Promise<Note>(async (res, rej) => {
 	if (data.createdAt == null) data.createdAt = new Date();
 	if (data.visibility == null) data.visibility = 'public';
 	if (data.viaMobile == null) data.viaMobile = false;
+	if (data.localOnly == null) data.localOnly = false;
 
-	if (data.visibleUsers) {
-		data.visibleUsers = erase(null, data.visibleUsers);
-	}
-
-	// リプライ対象が削除された投稿だったらreject
-	if (data.reply && data.reply.deletedAt != null) {
-		return rej();
-	}
-
-	// Renote対象が削除された投稿だったらreject
-	if (data.renote && data.renote.deletedAt != null) {
-		return rej();
+	// サイレンス
+	if (user.isSilenced && data.visibility == 'public') {
+		data.visibility = 'home';
 	}
 
 	// Renote対象が「ホームまたは全体」以外の公開範囲ならreject
 	if (data.renote && data.renote.visibility != 'public' && data.renote.visibility != 'home') {
-		return rej();
+		return rej('Renote target is not public or home');
 	}
 
-	// リプライ対象が自分以外の非公開の投稿なら禁止
-	if (data.reply && data.reply.visibility == 'private' && !data.reply.userId.equals(user._id)) {
-		return rej();
+	// Renote対象がpublicではないならhomeにする
+	if (data.renote && data.renote.visibility != 'public' && data.visibility == 'public') {
+		data.visibility = 'home';
 	}
 
-	// Renote対象が自分以外の非公開の投稿なら禁止
-	if (data.renote && data.renote.visibility == 'private' && !data.renote.userId.equals(user._id)) {
-		return rej();
+	// 返信対象がpublicではないならhomeにする
+	if (data.reply && data.reply.visibility != 'public' && data.visibility == 'public') {
+		data.visibility = 'home';
+	}
+
+	// ローカルのみをRenoteしたらローカルのみにする
+	if (data.renote && data.renote.localOnly) {
+		data.localOnly = true;
+	}
+
+	// ローカルのみにリプライしたらローカルのみにする
+	if (data.reply && data.reply.localOnly) {
+		data.localOnly = true;
 	}
 
 	if (data.text) {
 		data.text = data.text.trim();
 	}
 
-	// Parse MFM
-	const tokens = data.text ? parse(data.text) : [];
+	let tags = data.apHashtags;
+	let emojis = data.apEmojis;
+	let mentionedUsers = data.apMentions;
 
-	const tags = extractHashtags(tokens);
+	// Parse MFM if needed
+	if (!tags || !emojis || !mentionedUsers) {
+		const tokens = data.text ? parse(data.text)! : [];
+		const cwTokens = data.cw ? parse(data.cw)! : [];
+		const choiceTokens = data.poll && data.poll.choices
+			? concat(data.poll.choices.map(choice => parse(choice)!))
+			: [];
 
-	const emojis = extractEmojis(tokens);
+		const combinedTokens = tokens.concat(cwTokens).concat(choiceTokens);
 
-	const mentionedUsers = data.apMentions || await extractMentionedUsers(tokens);
+		tags = data.apHashtags || extractHashtags(combinedTokens);
 
-	if (data.reply && !user._id.equals(data.reply.userId) && !mentionedUsers.some(u => u._id.equals(data.reply.userId))) {
-		mentionedUsers.push(await User.findOne({ _id: data.reply.userId }));
+		emojis = data.apEmojis || extractEmojis(combinedTokens);
+
+		mentionedUsers = data.apMentions || await extractMentionedUsers(user, combinedTokens);
+	}
+
+	tags = tags.filter(tag => tag.length <= 100);
+
+	if (data.reply && (user.id !== data.reply.userId) && !mentionedUsers.some(u => u.id === data.reply!.userId)) {
+		mentionedUsers.push(await Users.findOne(data.reply.userId).then(ensure));
 	}
 
 	if (data.visibility == 'specified') {
-		data.visibleUsers.forEach(u => {
-			if (!mentionedUsers.some(x => x._id.equals(u._id))) {
+		if (data.visibleUsers == null) throw new Error('invalid param');
+
+		for (const u of data.visibleUsers) {
+			if (!mentionedUsers.some(x => x.id === u.id)) {
 				mentionedUsers.push(u);
 			}
-		});
+		}
+
+		if (data.reply && !data.visibleUsers.some(x => x.id === data.reply!.userId)) {
+			data.visibleUsers.push(await Users.findOne(data.reply.userId).then(ensure));
+		}
 	}
 
 	const note = await insertNote(user, data, tags, emojis, mentionedUsers);
 
 	res(note);
 
-	if (note == null) {
-		return;
-	}
-
 	// 統計を更新
 	notesChart.update(note, true);
 	perUserNotesChart.update(user, note, true);
 
 	// Register host
-	if (isRemoteUser(user)) {
-		registerInstance(user.host).then(i => {
-			Instance.update({ _id: i._id }, {
-				$inc: {
-					notesCount: 1
-				}
-			});
-
-			// TODO
-			//perInstanceChart.newNote();
+	if (Users.isRemoteUser(user)) {
+		registerOrFetchInstanceDoc(user.host).then(i => {
+			Instances.increment({ id: i.id }, 'notesCount', 1);
+			instanceChart.updateNote(i.host, note, true);
 		});
 	}
 
-	// ハッシュタグ登録
-	tags.map(tag => registerHashtag(user, tag));
-
-	// ファイルが添付されていた場合ドライブのファイルの「このファイルが添付された投稿一覧」プロパティにこの投稿を追加
-	if (data.files) {
-		data.files.forEach(file => {
-			DriveFile.update({ _id: file._id }, {
-				$push: {
-					'metadata.attachedNoteIds': note._id
-				}
-			});
-		});
-	}
-
-	// Increment notes count
-	incNotesCount(user);
+	// ハッシュタグ更新
+	for (const tag of tags) updateHashtag(user, tag);
 
 	// Increment notes count (user)
 	incNotesCountOfUser(user);
-
-	// 未読通知を作成
-	if (data.visibility == 'specified') {
-		data.visibleUsers.forEach(u => {
-			insertNoteUnread(u, note, true);
-		});
-	} else {
-		mentionedUsers.forEach(u => {
-			insertNoteUnread(u, note, false);
-		});
-	}
 
 	if (data.reply) {
 		saveReply(data.reply, note);
@@ -229,418 +216,321 @@ export default async (user: IUser, data: Option, silent = false) => new Promise<
 		incRenoteCount(data.renote);
 	}
 
-	if (isQuote(note)) {
-		saveQuote(data.renote, note);
-	}
-
-	// Pack the note
-	const noteObj = await pack(note);
-
-	if (isFirstNote) {
-		noteObj.isFirstNote = true;
-	}
-
-	if (tags.length > 0) {
-		publishHashtagStream(noteObj);
-	}
-
-	const nm = new NotificationManager(user, note);
-	const nmRelatedPromises = [];
-
-	createMentionedEvents(mentionedUsers, note, nm);
-
-	const noteActivity = await renderActivity(data, note);
-
-	if (isLocalUser(user) && note.visibility != 'private') {
-		deliverNoteToMentionedRemoteUsers(mentionedUsers, user, noteActivity);
-	}
-
-	// If has in reply to note
-	if (data.reply) {
-		// Fetch watchers
-		nmRelatedPromises.push(notifyToWatchersOfReplyee(data.reply, user, nm));
-
-		// この投稿をWatchする
-		if (isLocalUser(user) && user.settings.autoWatch !== false) {
-			watch(user._id, data.reply);
-		}
-
-		// 通知
-		if (isLocalUser(data.reply._user)) {
-			nm.push(data.reply.userId, 'reply');
-			publishMainStream(data.reply.userId, 'reply', noteObj);
-		}
-	}
-
-	// If it is renote
-	if (data.renote) {
-		const type = data.text ? 'quote' : 'renote';
-
-		// Notify
-		if (isLocalUser(data.renote._user)) {
-			nm.push(data.renote.userId, type);
-		}
-
-		// Fetch watchers
-		nmRelatedPromises.push(notifyToWatchersOfRenotee(data.renote, user, nm, type));
-
-		// この投稿をWatchする
-		if (isLocalUser(user) && user.settings.autoWatch !== false) {
-			watch(user._id, data.renote);
-		}
-
-		// Publish event
-		if (!user._id.equals(data.renote.userId) && isLocalUser(data.renote._user)) {
-			publishMainStream(data.renote.userId, 'renote', noteObj);
-		}
-	}
-
 	if (!silent) {
-		publish(user, note, noteObj, data.reply, data.renote, data.visibleUsers, noteActivity);
-	}
+		// ローカルユーザーのチャートはタイムライン取得時に更新しているのでリモートユーザーの場合だけでよい
+		if (Users.isRemoteUser(user)) activeUsersChart.update(user);
 
-	Promise.all(nmRelatedPromises).then(() => {
-		nm.deliver();
-	});
+		// 未読通知を作成
+		if (data.visibility == 'specified') {
+			if (data.visibleUsers == null) throw new Error('invalid param');
+
+			for (const u of data.visibleUsers) {
+				insertNoteUnread(u, note, true);
+			}
+		} else {
+			for (const u of mentionedUsers) {
+				insertNoteUnread(u, note, false);
+			}
+		}
+
+		// Pack the note
+		const noteObj = await Notes.pack(note);
+
+		if (user.notesCount === 0) {
+			(noteObj as any).isFirstNote = true;
+		}
+
+		publishNotesStream(noteObj);
+
+		const nm = new NotificationManager(user, note);
+		const nmRelatedPromises = [];
+
+		createMentionedEvents(mentionedUsers, note, nm);
+
+		const noteActivity = await renderNoteOrRenoteActivity(data, note);
+
+		if (Users.isLocalUser(user)) {
+			deliverNoteToMentionedRemoteUsers(mentionedUsers, user, noteActivity);
+		}
+
+		const profile = await UserProfiles.findOne(user.id).then(ensure);
+
+		// If has in reply to note
+		if (data.reply) {
+			// Fetch watchers
+			nmRelatedPromises.push(notifyToWatchersOfReplyee(data.reply, user, nm));
+
+			// この投稿をWatchする
+			if (Users.isLocalUser(user) && profile.autoWatch) {
+				watch(user.id, data.reply);
+			}
+
+			// 通知
+			if (data.reply.userHost === null) {
+				nm.push(data.reply.userId, 'reply');
+				publishMainStream(data.reply.userId, 'reply', noteObj);
+			}
+		}
+
+		// If it is renote
+		if (data.renote) {
+			const type = data.text ? 'quote' : 'renote';
+
+			// Notify
+			if (data.renote.userHost === null) {
+				nm.push(data.renote.userId, type);
+			}
+
+			// Fetch watchers
+			nmRelatedPromises.push(notifyToWatchersOfRenotee(data.renote, user, nm, type));
+
+			// この投稿をWatchする
+			if (Users.isLocalUser(user) && profile.autoWatch) {
+				watch(user.id, data.renote);
+			}
+
+			// Publish event
+			if ((user.id !== data.renote.userId) && data.renote.userHost === null) {
+				publishMainStream(data.renote.userId, 'renote', noteObj);
+			}
+		}
+
+		publish(user, note, data.reply, data.renote, noteActivity);
+
+		Promise.all(nmRelatedPromises).then(() => {
+			nm.deliver();
+		});
+	}
 
 	// Register to search database
 	index(note);
 });
 
-async function renderActivity(data: Option, note: INote) {
+async function renderNoteOrRenoteActivity(data: Option, note: Note) {
+	if (data.localOnly) return null;
+
 	const content = data.renote && data.text == null && data.poll == null && (data.files == null || data.files.length == 0)
-		? renderAnnounce(data.renote.uri ? data.renote.uri : `${config.url}/notes/${data.renote._id}`, note)
+		? renderAnnounce(data.renote.uri ? data.renote.uri : `${config.url}/notes/${data.renote.id}`, note)
 		: renderCreate(await renderNote(note, false), note);
 
-	return packAp(content);
+	return renderActivity(content);
 }
 
-function incRenoteCount(renote: INote) {
-	Note.update({ _id: renote._id }, {
-		$inc: {
-			renoteCount: 1,
-			score: 1
-		}
-	});
+function incRenoteCount(renote: Note) {
+	Notes.increment({ id: renote.id }, 'renoteCount', 1);
+	Notes.increment({ id: renote.id }, 'score', 1);
 }
 
-async function publish(user: IUser, note: INote, noteObj: any, reply: INote, renote: INote, visibleUsers: IUser[], noteActivity: any) {
-	if (isLocalUser(user)) {
+async function publish(user: User, note: Note, reply: Note | null | undefined, renote: Note | null | undefined, noteActivity: any) {
+	if (Users.isLocalUser(user)) {
 		// 投稿がリプライかつ投稿者がローカルユーザーかつリプライ先の投稿の投稿者がリモートユーザーなら配送
-		if (reply && isRemoteUser(reply._user)) {
-			deliver(user, noteActivity, reply._user.inbox);
+		if (reply && reply.userHost !== null) {
+			Users.findOne(reply.userId).then(ensure).then(u => {
+				deliver(user, noteActivity, u.inbox);
+			});
 		}
 
 		// 投稿がRenoteかつ投稿者がローカルユーザーかつRenote元の投稿の投稿者がリモートユーザーなら配送
-		if (renote && isRemoteUser(renote._user)) {
-			deliver(user, noteActivity, renote._user.inbox);
-		}
-
-		if (['private', 'followers', 'specified'].includes(note.visibility)) {
-			const detailPackedNote = await pack(note, user, {
-				detail: true
+		if (renote && renote.userHost !== null) {
+			Users.findOne(renote.userId).then(ensure).then(u => {
+				deliver(user, noteActivity, u.inbox);
 			});
-			// Publish event to myself's stream
-			publishHomeTimelineStream(note.userId, detailPackedNote);
-			publishHybridTimelineStream(note.userId, detailPackedNote);
-		} else {
-			// Publish event to myself's stream
-			publishHomeTimelineStream(note.userId, noteObj);
-
-			// Publish note to local and hybrid timeline stream
-			if (note.visibility != 'home') {
-				publishLocalTimelineStream(noteObj);
-			}
-
-			if (note.visibility == 'public') {
-				publishHybridTimelineStream(null, noteObj);
-			} else {
-				// Publish event to myself's stream
-				publishHybridTimelineStream(note.userId, noteObj);
-			}
 		}
-	}
-
-	// Publish note to global timeline stream
-	if (note.visibility == 'public' && note.replyId == null) {
-		publishGlobalTimelineStream(noteObj);
 	}
 
 	if (['public', 'home', 'followers'].includes(note.visibility)) {
 		// フォロワーに配信
 		publishToFollowers(note, user, noteActivity);
 	}
-
-	// リストに配信
-	publishToUserLists(note, noteObj);
 }
 
-async function insertNote(user: IUser, data: Option, tags: string[], emojis: string[], mentionedUsers: IUser[]) {
-	const insert: any = {
-		createdAt: data.createdAt,
-		fileIds: data.files ? data.files.map(file => file._id) : [],
-		replyId: data.reply ? data.reply._id : null,
-		renoteId: data.renote ? data.renote._id : null,
+async function insertNote(user: User, data: Option, tags: string[], emojis: string[], mentionedUsers: User[]) {
+	const insert = new Note({
+		id: genId(data.createdAt!),
+		createdAt: data.createdAt!,
+		fileIds: data.files ? data.files.map(file => file.id) : [],
+		replyId: data.reply ? data.reply.id : null,
+		renoteId: data.renote ? data.renote.id : null,
+		name: data.name,
 		text: data.text,
-		poll: data.poll,
+		hasPoll: data.poll != null,
 		cw: data.cw == null ? null : data.cw,
-		tags,
-		tagsLower: tags.map(tag => tag.toLowerCase()),
+		tags: tags.map(tag => tag.toLowerCase()),
 		emojis,
-		userId: user._id,
-		viaMobile: data.viaMobile,
+		userId: user.id,
+		viaMobile: data.viaMobile!,
+		localOnly: data.localOnly!,
 		geo: data.geo || null,
-		appId: data.app ? data.app._id : null,
-		visibility: data.visibility,
+		appId: data.app ? data.app.id : null,
+		visibility: data.visibility as any,
 		visibleUserIds: data.visibility == 'specified'
 			? data.visibleUsers
-				? data.visibleUsers.map(u => u._id)
+				? data.visibleUsers.map(u => u.id)
 				: []
 			: [],
 
+		attachedFileTypes: data.files ? data.files.map(file => file.type) : [],
+
 		// 以下非正規化データ
-		_reply: data.reply ? {
-			userId: data.reply.userId,
-			user: {
-				host: data.reply._user.host
-			}
-		} : null,
-		_renote: data.renote ? {
-			userId: data.renote.userId,
-			user: {
-				host: data.renote._user.host
-			}
-		} : null,
-		_user: {
-			host: user.host,
-			inbox: isRemoteUser(user) ? user.inbox : undefined
-		},
-		_files: data.files ? data.files : []
-	};
+		replyUserId: data.reply ? data.reply.userId : null,
+		replyUserHost: data.reply ? data.reply.userHost : null,
+		renoteUserId: data.renote ? data.renote.userId : null,
+		renoteUserHost: data.renote ? data.renote.userHost : null,
+		userHost: user.host,
+	});
 
 	if (data.uri != null) insert.uri = data.uri;
 
 	// Append mentions data
 	if (mentionedUsers.length > 0) {
-		insert.mentions = mentionedUsers.map(u => u._id);
-		insert.mentionedRemoteUsers = mentionedUsers.filter(u => isRemoteUser(u)).map(u => ({
+		insert.mentions = mentionedUsers.map(u => u.id);
+		insert.mentionedRemoteUsers = JSON.stringify(mentionedUsers.filter(u => Users.isRemoteUser(u)).map(u => ({
 			uri: (u as IRemoteUser).uri,
 			username: u.username,
 			host: u.host
-		}));
+		})));
 	}
 
 	// 投稿を作成
 	try {
-		return await Note.insert(insert);
+		let note: Note;
+		if (insert.hasPoll) {
+			// Start transaction
+			await getConnection().transaction(async transactionalEntityManager => {
+				note = await transactionalEntityManager.save(insert);
+
+				const poll = new Poll({
+					noteId: note.id,
+					choices: data.poll!.choices,
+					expiresAt: data.poll!.expiresAt,
+					multiple: data.poll!.multiple,
+					votes: new Array(data.poll!.choices.length).fill(0),
+					noteVisibility: note.visibility,
+					userId: user.id,
+					userHost: user.host
+				});
+
+				await transactionalEntityManager.save(poll);
+			});
+		} else {
+			note = await Notes.save(insert);
+		}
+
+		return note!;
 	} catch (e) {
 		// duplicate key error
-		if (e.code === 11000) {
-			return null;
+		if (isDuplicateKeyValueError(e)) {
+			const err = new Error('Duplicated note');
+			err.name = 'duplicated';
+			throw err;
 		}
 
 		console.error(e);
-		throw 'something happened';
+
+		throw new Error('something happened');
 	}
 }
 
-function extractHashtags(tokens: ReturnType<typeof parse>): string[] {
-	// Extract hashtags
-	const hashtags = tokens
-		.filter(t => t.type == 'hashtag')
-		.map(t => (t as TextElementHashtag).hashtag)
-		.filter(tag => tag.length <= 100);
-
-	return unique(hashtags);
-}
-
-function extractEmojis(tokens: ReturnType<typeof parse>): string[] {
-	// Extract emojis
-	const emojis = tokens
-		.filter(t => t.type == 'emoji' && t.name)
-		.map(t => (t as TextElementEmoji).name)
-		.filter(emoji => emoji.length <= 100);
-
-	return unique(emojis);
-}
-
-function index(note: INote) {
+function index(note: Note) {
 	if (note.text == null || config.elasticsearch == null) return;
 
-	es.index({
-		index: 'misskey',
-		type: 'note',
-		id: note._id.toString(),
+	es!.index({
+		index: 'misskey_note',
+		id: note.id.toString(),
 		body: {
-			text: note.text
+			text: note.text.toLowerCase(),
+			userId: note.userId,
+			userHost: note.userHost
 		}
 	});
 }
 
-async function notifyToWatchersOfRenotee(renote: INote, user: IUser, nm: NotificationManager, type: NotificationType) {
-	const watchers = await NoteWatching.find({
-		noteId: renote._id,
-		userId: { $ne: user._id }
-	}, {
-			fields: {
-				userId: true
-			}
-		});
+async function notifyToWatchersOfRenotee(renote: Note, user: User, nm: NotificationManager, type: NotificationType) {
+	const watchers = await NoteWatchings.find({
+		noteId: renote.id,
+		userId: Not(user.id)
+	});
 
-	watchers.forEach(watcher => {
+	for (const watcher of watchers) {
 		nm.push(watcher.userId, type);
-	});
+	}
 }
 
-async function notifyToWatchersOfReplyee(reply: INote, user: IUser, nm: NotificationManager) {
-	const watchers = await NoteWatching.find({
-		noteId: reply._id,
-		userId: { $ne: user._id }
-	}, {
-			fields: {
-				userId: true
-			}
-		});
+async function notifyToWatchersOfReplyee(reply: Note, user: User, nm: NotificationManager) {
+	const watchers = await NoteWatchings.find({
+		noteId: reply.id,
+		userId: Not(user.id)
+	});
 
-	watchers.forEach(watcher => {
+	for (const watcher of watchers) {
 		nm.push(watcher.userId, 'reply');
-	});
+	}
 }
 
-async function publishToUserLists(note: INote, noteObj: any) {
-	const lists = await UserList.find({
-		userIds: note.userId
-	});
-
-	lists.forEach(list => {
-		publishUserListStream(list._id, 'note', noteObj);
-	});
-}
-
-async function publishToFollowers(note: INote, user: IUser, noteActivity: any) {
-	const detailPackedNote = await pack(note, null, {
-		detail: true,
-		skipHide: true
-	});
-
-	const followers = await Following.find({
+async function publishToFollowers(note: Note, user: User, noteActivity: any) {
+	const followers = await Followings.find({
 		followeeId: note.userId
 	});
 
 	const queue: string[] = [];
 
-	followers.map(following => {
-		const follower = following._follower;
-
-		if (isLocalUser(follower)) {
-			// ストーキングしていない場合
-			if (!following.stalk) {
-				// この投稿が返信ならスキップ
-				if (note.replyId && !note._reply.userId.equals(following.followerId) && !note._reply.userId.equals(note.userId))
-					return;
-			}
-
-			// Publish event to followers stream
-			publishHomeTimelineStream(following.followerId, detailPackedNote);
-
-			if (isRemoteUser(user) || note.visibility != 'public') {
-				publishHybridTimelineStream(following.followerId, detailPackedNote);
-			}
-		} else {
+	for (const following of followers) {
+		if (Followings.isRemoteFollower(following)) {
 			// フォロワーがリモートユーザーかつ投稿者がローカルユーザーなら投稿を配信
-			if (isLocalUser(user)) {
-				const inbox = follower.sharedInbox || follower.inbox;
+			if (Users.isLocalUser(user)) {
+				const inbox = following.followerSharedInbox || following.followerInbox;
 				if (!queue.includes(inbox)) queue.push(inbox);
 			}
 		}
-	});
+	}
 
-	queue.forEach(inbox => {
+	for (const inbox of queue) {
 		deliver(user as any, noteActivity, inbox);
-	});
-}
-
-function deliverNoteToMentionedRemoteUsers(mentionedUsers: IUser[], user: ILocalUser, noteActivity: any) {
-	mentionedUsers.filter(u => isRemoteUser(u)).forEach(async (u) => {
-		deliver(user, noteActivity, (u as IRemoteUser).inbox);
-	});
-}
-
-function createMentionedEvents(mentionedUsers: IUser[], note: INote, nm: NotificationManager) {
-	mentionedUsers.filter(u => isLocalUser(u)).forEach(async (u) => {
-		const detailPackedNote = await pack(note, u, {
-			detail: true
-		});
-
-		publishMainStream(u._id, 'mention', detailPackedNote);
-
-		// Create notification
-		nm.push(u._id, 'mention');
-	});
-}
-
-function saveQuote(renote: INote, note: INote) {
-	Note.update({ _id: renote._id }, {
-		$push: {
-			_quoteIds: note._id
-		}
-	});
-}
-
-function saveReply(reply: INote, note: INote) {
-	Note.update({ _id: reply._id }, {
-		$push: {
-			_replyIds: note._id
-		},
-		$inc: {
-			repliesCount: 1
-		}
-	});
-}
-
-function incNotesCountOfUser(user: IUser) {
-	User.update({ _id: user._id }, {
-		$inc: {
-			notesCount: 1
-		}
-	});
-}
-
-function incNotesCount(user: IUser) {
-	if (isLocalUser(user)) {
-		Meta.update({}, {
-			$inc: {
-				'stats.notesCount': 1,
-				'stats.originalNotesCount': 1
-			}
-		}, { upsert: true });
-	} else {
-		Meta.update({}, {
-			$inc: {
-				'stats.notesCount': 1
-			}
-		}, { upsert: true });
 	}
 }
 
-async function extractMentionedUsers(tokens: ReturnType<typeof parse>): Promise<IUser[]> {
+function deliverNoteToMentionedRemoteUsers(mentionedUsers: User[], user: ILocalUser, noteActivity: any) {
+	for (const u of mentionedUsers.filter(u => Users.isRemoteUser(u))) {
+		deliver(user, noteActivity, (u as IRemoteUser).inbox);
+	}
+}
+
+async function createMentionedEvents(mentionedUsers: User[], note: Note, nm: NotificationManager) {
+	for (const u of mentionedUsers.filter(u => Users.isLocalUser(u))) {
+		const detailPackedNote = await Notes.pack(note, u, {
+			detail: true
+		});
+
+		publishMainStream(u.id, 'mention', detailPackedNote);
+
+		// Create notification
+		nm.push(u.id, 'mention');
+	}
+}
+
+function saveReply(reply: Note, note: Note) {
+	Notes.increment({ id: reply.id }, 'repliesCount', 1);
+}
+
+function incNotesCountOfUser(user: User) {
+	Users.increment({ id: user.id }, 'notesCount', 1);
+	Users.update({ id: user.id }, {
+		updatedAt: new Date()
+	});
+}
+
+async function extractMentionedUsers(user: User, tokens: ReturnType<typeof parse>): Promise<User[]> {
 	if (tokens == null) return [];
 
-	const mentionTokens = tokens
-		.filter(t => t.type == 'mention') as TextElementMention[];
+	const mentions = extractMentions(tokens);
 
-	let mentionedUsers =
-		erase(null, await Promise.all(mentionTokens.map(async m => {
-			try {
-				return await resolveUser(m.username, m.host);
-			} catch (e) {
-				return null;
-			}
-		})));
+	let mentionedUsers = (await Promise.all(mentions.map(m =>
+		resolveUser(m.username, m.host || user.host).catch(() => null)
+	))).filter(x => x != null) as User[];
 
 	// Drop duplicate users
 	mentionedUsers = mentionedUsers.filter((u, i, self) =>
-		i === self.findIndex(u2 => u._id.equals(u2._id))
+		i === self.findIndex(u2 => u.id === u2.id)
 	);
 
 	return mentionedUsers;

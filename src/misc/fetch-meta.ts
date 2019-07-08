@@ -1,24 +1,35 @@
-import Meta, { IMeta } from '../models/meta';
+import { Meta } from '../models/entities/meta';
+import { getConnection } from 'typeorm';
 
-const defaultMeta: any = {
-	name: 'Misskey',
-	maintainer: {},
-	langs: [],
-	cacheRemoteFiles: true,
-	localDriveCapacityMb: 256,
-	remoteDriveCapacityMb: 8,
-	hidedTags: [],
-	stats: {
-		originalNotesCount: 0,
-		originalUsersCount: 0
-	},
-	maxNoteTextLength: 1000,
-	enableTwitterIntegration: false,
-	enableGithubIntegration: false,
-};
+let cache: Meta;
 
-export default async function(): Promise<IMeta> {
-	const meta = await Meta.findOne({});
+export async function fetchMeta(noCache = false): Promise<Meta> {
+	if (!noCache && cache) return cache;
 
-	return Object.assign({}, defaultMeta, meta);
+	return await getConnection().transaction(async transactionalEntityManager => {
+		// バグでレコードが複数出来てしまっている可能性があるので新しいIDを優先する
+		const meta = await transactionalEntityManager.findOne(Meta, {
+			order: {
+				id: 'DESC'
+			}
+		});
+
+		if (meta) {
+			cache = meta;
+			return meta;
+		} else {
+			const saved = await transactionalEntityManager.save(Meta, {
+				id: 'x'
+			}) as Meta;
+
+			cache = saved;
+			return saved;
+		}
+	});
 }
+
+setInterval(() => {
+	fetchMeta(true).then(meta => {
+		cache = meta;
+	});
+}, 5000);

@@ -1,7 +1,9 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../../misc/cafy-id';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
 import acceptFollowRequest from '../../../../../services/following/requests/accept';
-import User from '../../../../../models/user';
 import define from '../../../define';
+import { ApiError } from '../../../error';
+import { getUser } from '../../../common/getters';
 
 export const meta = {
 	desc: {
@@ -9,33 +11,39 @@ export const meta = {
 		'en-US': 'Accept a follow request.'
 	},
 
+	tags: ['following', 'account'],
+
 	requireCredential: true,
 
-	kind: 'following-write',
+	kind: 'write:following',
 
 	params: {
 		userId: {
 			validator: $.type(ID),
-			transform: transform,
 			desc: {
 				'ja-JP': '対象のユーザーのID',
 				'en-US': 'Target user ID'
 			}
 		}
+	},
+
+	errors: {
+		noSuchUser: {
+			message: 'No such user.',
+			code: 'NO_SUCH_USER',
+			id: '66ce1645-d66c-46bb-8b79-96739af885bd'
+		},
 	}
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
+export default define(meta, async (ps, user) => {
 	// Fetch follower
-	const follower = await User.findOne({
-		_id: ps.userId
+	const follower = await getUser(ps.userId).catch(e => {
+		if (e.id === '15348ddd-432d-49c2-8a5a-8069753becff') throw new ApiError(meta.errors.noSuchUser);
+		throw e;
 	});
-
-	if (follower === null) {
-		return rej('follower not found');
-	}
 
 	await acceptFollowRequest(user, follower);
 
-	res();
-}));
+	return;
+});

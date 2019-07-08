@@ -1,23 +1,32 @@
-import * as mongo from 'mongodb';
-import { toUnicode } from 'punycode';
-import * as debug from 'debug';
+import * as promiseLimit from 'promise-limit';
 
 import config from '../../../config';
-import User, { validateUsername, isValidName, IUser, IRemoteUser, isRemoteUser } from '../../../models/user';
 import Resolver from '../resolver';
 import { resolveImage } from './image';
 import { isCollectionOrOrderedCollection, isCollection, IPerson } from '../type';
-import { IDriveFile } from '../../../models/drive-file';
-import Meta from '../../../models/meta';
-import htmlToMFM from '../../../mfm/html-to-mfm';
-import usersChart from '../../../chart/users';
-import { URL } from 'url';
-import { resolveNote } from './note';
-import registerInstance from '../../../services/register-instance';
-import Instance from '../../../models/instance';
-import getDriveFileUrl from '../../../misc/get-drive-file-url';
-
-const log = debug('misskey:activitypub');
+import { DriveFile } from '../../../models/entities/drive-file';
+import { fromHtml } from '../../../mfm/fromHtml';
+import { resolveNote, extractEmojis } from './note';
+import { registerOrFetchInstanceDoc } from '../../../services/register-or-fetch-instance-doc';
+import { ITag, extractHashtags } from './tag';
+import { IIdentifier } from './identifier';
+import { apLogger } from '../logger';
+import { Note } from '../../../models/entities/note';
+import { updateHashtag } from '../../../services/update-hashtag';
+import { Users, UserNotePinings, Instances, DriveFiles, Followings, UserProfiles, UserPublickeys } from '../../../models';
+import { User, IRemoteUser } from '../../../models/entities/user';
+import { Emoji } from '../../../models/entities/emoji';
+import { UserNotePining } from '../../../models/entities/user-note-pinings';
+import { genId } from '../../../misc/gen-id';
+import { instanceChart, usersChart } from '../../../services/chart';
+import { UserPublickey } from '../../../models/entities/user-publickey';
+import { isDuplicateKeyValueError } from '../../../misc/is-duplicate-key-value-error';
+import { toPuny } from '../../../misc/convert-host';
+import { UserProfile } from '../../../models/entities/user-profile';
+import { validActor } from '../../../remote/activitypub/type';
+import { getConnection } from 'typeorm';
+import { ensure } from '../../../prelude/ensure';
+const logger = apLogger;
 
 /**
  * Validate Person object
@@ -25,13 +34,13 @@ const log = debug('misskey:activitypub');
  * @param uri Fetch target URI
  */
 function validatePerson(x: any, uri: string) {
-	const expectHost = toUnicode(new URL(uri).hostname.toLowerCase());
+	const expectHost = toPuny(new URL(uri).hostname);
 
 	if (x == null) {
 		return new Error('invalid person: object is null');
 	}
 
-	if (x.type != 'Person' && x.type != 'Service') {
+	if (!validActor.includes(x.type)) {
 		return new Error(`invalid person: object is not a person or service '${x.type}'`);
 	}
 
@@ -43,19 +52,21 @@ function validatePerson(x: any, uri: string) {
 		return new Error('invalid person: inbox is not a string');
 	}
 
-	if (!validateUsername(x.preferredUsername)) {
+	if (!Users.validateRemoteUsername.ok(x.preferredUsername)) {
 		return new Error('invalid person: invalid username');
 	}
 
-	if (!isValidName(x.name == '' ? null : x.name)) {
-		return new Error('invalid person: invalid name');
+	if (x.name != null && x.name != '') {
+		if (!Users.validateName.ok(x.name)) {
+			return new Error('invalid person: invalid name');
+		}
 	}
 
 	if (typeof x.id !== 'string') {
 		return new Error('invalid person: id is not a string');
 	}
 
-	const idHost = toUnicode(new URL(x.id).hostname.toLowerCase());
+	const idHost = toPuny(new URL(x.id).hostname);
 	if (idHost !== expectHost) {
 		return new Error('invalid person: id has different host');
 	}
@@ -64,7 +75,7 @@ function validatePerson(x: any, uri: string) {
 		return new Error('invalid person: publicKey.id is not a string');
 	}
 
-	const publicKeyIdHost = toUnicode(new URL(x.publicKey.id).hostname.toLowerCase());
+	const publicKeyIdHost = toPuny(new URL(x.publicKey.id).hostname);
 	if (publicKeyIdHost !== expectHost) {
 		return new Error('invalid person: publicKey.id has different host');
 	}
@@ -77,17 +88,17 @@ function validatePerson(x: any, uri: string) {
  *
  * Misskeyに対象のPersonが登録されていればそれを返します。
  */
-export async function fetchPerson(uri: string, resolver?: Resolver): Promise<IUser> {
-	if (typeof uri !== 'string') throw 'uri is not string';
+export async function fetchPerson(uri: string, resolver?: Resolver): Promise<User | null> {
+	if (typeof uri !== 'string') throw new Error('uri is not string');
 
 	// URIがこのサーバーを指しているならデータベースからフェッチ
 	if (uri.startsWith(config.url + '/')) {
-		const id = new mongo.ObjectID(uri.split('/').pop());
-		return await User.findOne({ _id: id });
+		const id = uri.split('/').pop();
+		return await Users.findOne(id).then(x => x || null);
 	}
 
 	//#region このサーバーに既に登録されていたらそれを返す
-	const exist = await User.findOne({ uri });
+	const exist = await Users.findOne({ uri });
 
 	if (exist) {
 		return exist;
@@ -100,8 +111,8 @@ export async function fetchPerson(uri: string, resolver?: Resolver): Promise<IUs
 /**
  * Personを作成します。
  */
-export async function createPerson(uri: string, resolver?: Resolver): Promise<IUser> {
-	if (typeof uri !== 'string') throw 'uri is not string';
+export async function createPerson(uri: string, resolver?: Resolver): Promise<User> {
+	if (typeof uri !== 'string') throw new Error('uri is not string');
 
 	if (resolver == null) resolver = new Resolver();
 
@@ -115,122 +126,127 @@ export async function createPerson(uri: string, resolver?: Resolver): Promise<IU
 
 	const person: IPerson = object;
 
-	log(`Creating the Person: ${person.id}`);
+	logger.info(`Creating the Person: ${person.id}`);
 
-	const [followersCount = 0, followingCount = 0, notesCount = 0] = await Promise.all([
-		resolver.resolve(person.followers).then(
-			resolved => isCollectionOrOrderedCollection(resolved) ? resolved.totalItems : undefined,
-			() => undefined
-		),
-		resolver.resolve(person.following).then(
-			resolved => isCollectionOrOrderedCollection(resolved) ? resolved.totalItems : undefined,
-			() => undefined
-		),
-		resolver.resolve(person.outbox).then(
-			resolved => isCollectionOrOrderedCollection(resolved) ? resolved.totalItems : undefined,
-			() => undefined
-		)
-	]);
+	const host = toPuny(new URL(object.id).hostname);
 
-	const host = toUnicode(new URL(object.id).hostname.toLowerCase());
+	const { fields } = analyzeAttachments(person.attachment || []);
+
+	const tags = extractHashtags(person.tag).map(tag => tag.toLowerCase());
 
 	const isBot = object.type == 'Service';
 
 	// Create user
 	let user: IRemoteUser;
 	try {
-		user = await User.insert({
-			avatarId: null,
-			bannerId: null,
-			createdAt: Date.parse(person.published) || null,
-			updatedAt: new Date(),
-			description: htmlToMFM(person.summary),
-			followersCount,
-			followingCount,
-			notesCount,
-			name: person.name,
-			isLocked: person.manuallyApprovesFollowers,
-			username: person.preferredUsername,
-			usernameLower: person.preferredUsername.toLowerCase(),
-			host,
-			publicKey: {
-				id: person.publicKey.id,
-				publicKeyPem: person.publicKey.publicKeyPem
-			},
-			inbox: person.inbox,
-			sharedInbox: person.sharedInbox,
-			featured: person.featured,
-			endpoints: person.endpoints,
-			uri: person.id,
-			url: person.url,
-			isBot: isBot,
-			isCat: (person as any).isCat === true ? true : false
-		}) as IRemoteUser;
+		// Start transaction
+		await getConnection().transaction(async transactionalEntityManager => {
+			user = await transactionalEntityManager.save(new User({
+				id: genId(),
+				avatarId: null,
+				bannerId: null,
+				createdAt: new Date(),
+				lastFetchedAt: new Date(),
+				name: person.name,
+				isLocked: person.manuallyApprovesFollowers,
+				username: person.preferredUsername,
+				usernameLower: person.preferredUsername.toLowerCase(),
+				host,
+				inbox: person.inbox,
+				sharedInbox: person.sharedInbox || (person.endpoints ? person.endpoints.sharedInbox : undefined),
+				featured: person.featured,
+				uri: person.id,
+				tags,
+				isBot,
+				isCat: (person as any).isCat === true
+			})) as IRemoteUser;
+
+			await transactionalEntityManager.save(new UserProfile({
+				userId: user.id,
+				description: person.summary ? fromHtml(person.summary) : null,
+				url: person.url,
+				fields,
+				userHost: host
+			}));
+
+			await transactionalEntityManager.save(new UserPublickey({
+				userId: user.id,
+				keyId: person.publicKey.id,
+				keyPem: person.publicKey.publicKeyPem
+			}));
+		});
 	} catch (e) {
 		// duplicate key error
-		if (e.code === 11000) {
+		if (isDuplicateKeyValueError(e)) {
 			throw new Error('already registered');
 		}
 
-		console.error(e);
+		logger.error(e);
 		throw e;
 	}
 
 	// Register host
-	registerInstance(host).then(i => {
-		Instance.update({ _id: i._id }, {
-			$inc: {
-				usersCount: 1
-			}
-		});
-
-		// TODO
-		//perInstanceChart.newUser();
+	registerOrFetchInstanceDoc(host).then(i => {
+		Instances.increment({ id: i.id }, 'usersCount', 1);
+		instanceChart.newUser(i.host);
 	});
 
-	//#region Increment users count
-	Meta.update({}, {
-		$inc: {
-			'stats.usersCount': 1
-		}
-	}, { upsert: true });
+	usersChart.update(user!, true);
 
-	usersChart.update(user, true);
-	//#endregion
+	// ハッシュタグ更新
+	for (const tag of tags) updateHashtag(user!, tag, true, true);
+	for (const tag of (user!.tags || []).filter(x => !tags.includes(x))) updateHashtag(user!, tag, true, false);
 
 	//#region アイコンとヘッダー画像をフェッチ
-	const [avatar, banner] = (await Promise.all<IDriveFile>([
+	const [avatar, banner] = (await Promise.all<DriveFile | null>([
 		person.icon,
 		person.image
 	].map(img =>
 		img == null
 			? Promise.resolve(null)
-			: resolveImage(user, img).catch(() => null)
+			: resolveImage(user!, img).catch(() => null)
 	)));
 
-	const avatarId = avatar ? avatar._id : null;
-	const bannerId = banner ? banner._id : null;
-	const avatarUrl = getDriveFileUrl(avatar, true);
-	const bannerUrl = getDriveFileUrl(banner, false);
+	const avatarId = avatar ? avatar.id : null;
+	const bannerId = banner ? banner.id : null;
+	const avatarUrl = avatar ? DriveFiles.getPublicUrl(avatar) : null;
+	const bannerUrl = banner ? DriveFiles.getPublicUrl(banner) : null;
+	const avatarColor = avatar && avatar.properties.avgColor ? avatar.properties.avgColor : null;
+	const bannerColor = banner && banner.properties.avgColor ? banner.properties.avgColor : null;
 
-	await User.update({ _id: user._id }, {
-		$set: {
-			avatarId,
-			bannerId,
-			avatarUrl,
-			bannerUrl
-		}
+	await Users.update(user!.id, {
+		avatarId,
+		bannerId,
+		avatarUrl,
+		bannerUrl,
+		avatarColor,
+		bannerColor
 	});
 
-	user.avatarId = avatarId;
-	user.bannerId = bannerId;
-	user.avatarUrl = avatarUrl;
-	user.bannerUrl = bannerUrl;
+	user!.avatarId = avatarId;
+	user!.bannerId = bannerId;
+	user!.avatarUrl = avatarUrl;
+	user!.bannerUrl = bannerUrl;
+	user!.avatarColor = avatarColor;
+	user!.bannerColor = bannerColor;
 	//#endregion
 
-	await updateFeatured(user._id).catch(err => console.log(err));
+	//#region カスタム絵文字取得
+	const emojis = await extractEmojis(person.tag || [], host).catch(e => {
+		logger.info(`extractEmojis: ${e}`);
+		return [] as Emoji[];
+	});
 
-	return user;
+	const emojiNames = emojis.map(emoji => emoji.name);
+
+	await Users.update(user!.id, {
+		emojis: emojiNames
+	});
+	//#endregion
+
+	await updateFeatured(user!.id).catch(err => logger.error(err));
+
+	return user!;
 }
 
 /**
@@ -240,8 +256,8 @@ export async function createPerson(uri: string, resolver?: Resolver): Promise<IU
  * @param resolver Resolver
  * @param hint Hint of Person object (この値が正当なPersonの場合、Remote resolveをせずに更新に利用します)
  */
-export async function updatePerson(uri: string, resolver?: Resolver, hint?: object): Promise<void> {
-	if (typeof uri !== 'string') throw 'uri is not string';
+export async function updatePerson(uri: string, resolver?: Resolver | null, hint?: object): Promise<void> {
+	if (typeof uri !== 'string') throw new Error('uri is not string');
 
 	// URIがこのサーバーを指しているならスキップ
 	if (uri.startsWith(config.url + '/')) {
@@ -249,7 +265,7 @@ export async function updatePerson(uri: string, resolver?: Resolver, hint?: obje
 	}
 
 	//#region このサーバーに既に登録されているか
-	const exist = await User.findOne({ uri }) as IRemoteUser;
+	const exist = await Users.findOne({ uri }) as IRemoteUser;
 
 	if (exist == null) {
 		return;
@@ -268,25 +284,10 @@ export async function updatePerson(uri: string, resolver?: Resolver, hint?: obje
 
 	const person: IPerson = object;
 
-	log(`Updating the Person: ${person.id}`);
-
-	const [followersCount = 0, followingCount = 0, notesCount = 0] = await Promise.all([
-		resolver.resolve(person.followers).then(
-			resolved => isCollectionOrOrderedCollection(resolved) ? resolved.totalItems : undefined,
-			() => undefined
-		),
-		resolver.resolve(person.following).then(
-			resolved => isCollectionOrOrderedCollection(resolved) ? resolved.totalItems : undefined,
-			() => undefined
-		),
-		resolver.resolve(person.outbox).then(
-			resolved => isCollectionOrOrderedCollection(resolved) ? resolved.totalItems : undefined,
-			() => undefined
-		)
-	]);
+	logger.info(`Updating the Person: ${person.id}`);
 
 	// アイコンとヘッダー画像をフェッチ
-	const [avatar, banner] = (await Promise.all<IDriveFile>([
+	const [avatar, banner] = (await Promise.all<DriveFile | null>([
 		person.icon,
 		person.image
 	].map(img =>
@@ -295,36 +296,76 @@ export async function updatePerson(uri: string, resolver?: Resolver, hint?: obje
 			: resolveImage(exist, img).catch(() => null)
 	)));
 
-	// Update user
-	await User.update({ _id: exist._id }, {
-		$set: {
-			updatedAt: new Date(),
-			inbox: person.inbox,
-			sharedInbox: person.sharedInbox,
-			featured: person.featured,
-			avatarId: avatar ? avatar._id : null,
-			bannerId: banner ? banner._id : null,
-			avatarUrl: getDriveFileUrl(avatar, true),
-			bannerUrl: getDriveFileUrl(banner, false),
-			description: htmlToMFM(person.summary),
-			followersCount,
-			followingCount,
-			notesCount,
-			name: person.name,
-			url: person.url,
-			endpoints: person.endpoints,
-			isBot: object.type == 'Service',
-			isCat: (person as any).isCat === true ? true : false,
-			isLocked: person.manuallyApprovesFollowers,
-			createdAt: Date.parse(person.published) || null,
-			publicKey: {
-				id: person.publicKey.id,
-				publicKeyPem: person.publicKey.publicKeyPem
-			},
-		}
+	// カスタム絵文字取得
+	const emojis = await extractEmojis(person.tag || [], exist.host).catch(e => {
+		logger.info(`extractEmojis: ${e}`);
+		return [] as Emoji[];
 	});
 
-	await updateFeatured(exist._id).catch(err => console.log(err));
+	const emojiNames = emojis.map(emoji => emoji.name);
+
+	const { fields, services } = analyzeAttachments(person.attachment || []);
+
+	const tags = extractHashtags(person.tag).map(tag => tag.toLowerCase());
+
+	const updates = {
+		lastFetchedAt: new Date(),
+		inbox: person.inbox,
+		sharedInbox: person.sharedInbox || (person.endpoints ? person.endpoints.sharedInbox : undefined),
+		featured: person.featured,
+		emojis: emojiNames,
+		name: person.name,
+		tags,
+		isBot: object.type == 'Service',
+		isCat: (person as any).isCat === true,
+		isLocked: person.manuallyApprovesFollowers,
+	} as Partial<User>;
+
+	if (avatar) {
+		updates.avatarId = avatar.id;
+		updates.avatarUrl = DriveFiles.getPublicUrl(avatar);
+		updates.avatarColor = avatar.properties.avgColor ? avatar.properties.avgColor : null;
+	}
+
+	if (banner) {
+		updates.bannerId = banner.id;
+		updates.bannerUrl = DriveFiles.getPublicUrl(banner);
+		updates.bannerColor = banner.properties.avgColor ? banner.properties.avgColor : null;
+	}
+
+	// Update user
+	await Users.update(exist.id, updates);
+
+	await UserPublickeys.update({ userId: exist.id }, {
+		keyId: person.publicKey.id,
+		keyPem: person.publicKey.publicKeyPem
+	});
+
+	await UserProfiles.update({ userId: exist.id }, {
+		url: person.url,
+		fields,
+		description: person.summary ? fromHtml(person.summary) : null,
+		twitterUserId: services.twitter ? services.twitter.userId : null,
+		twitterScreenName: services.twitter ? services.twitter.screenName : null,
+		githubId: services.github ? services.github.id : null,
+		githubLogin: services.github ? services.github.login : null,
+		discordId: services.discord ? services.discord.id : null,
+		discordUsername: services.discord ? services.discord.username : null,
+		discordDiscriminator: services.discord ? services.discord.discriminator : null,
+	});
+
+	// ハッシュタグ更新
+	for (const tag of tags) updateHashtag(exist, tag, true, true);
+	for (const tag of (exist.tags || []).filter(x => !tags.includes(x))) updateHashtag(exist, tag, true, false);
+
+	// 該当ユーザーが既にフォロワーになっていた場合はFollowingもアップデートする
+	await Followings.update({
+		followerId: exist.id
+	}, {
+		followerSharedInbox: person.sharedInbox || (person.endpoints ? person.endpoints.sharedInbox : undefined)
+	});
+
+	await updateFeatured(exist.id).catch(err => logger.error(err));
 }
 
 /**
@@ -333,8 +374,8 @@ export async function updatePerson(uri: string, resolver?: Resolver, hint?: obje
  * Misskeyに対象のPersonが登録されていればそれを返し、そうでなければ
  * リモートサーバーからフェッチしてMisskeyに登録しそれを返します。
  */
-export async function resolvePerson(uri: string, verifier?: string, resolver?: Resolver): Promise<IUser> {
-	if (typeof uri !== 'string') throw 'uri is not string';
+export async function resolvePerson(uri: string, resolver?: Resolver): Promise<User> {
+	if (typeof uri !== 'string') throw new Error('uri is not string');
 
 	//#region このサーバーに既に登録されていたらそれを返す
 	const exist = await fetchPerson(uri);
@@ -349,12 +390,72 @@ export async function resolvePerson(uri: string, verifier?: string, resolver?: R
 	return await createPerson(uri, resolver);
 }
 
-export async function updateFeatured(userId: mongo.ObjectID) {
-	const user = await User.findOne({ _id: userId });
-	if (!isRemoteUser(user)) return;
+const isPropertyValue = (x: {
+		type: string,
+		name?: string,
+		value?: string
+	}) =>
+		x &&
+		x.type === 'PropertyValue' &&
+		typeof x.name === 'string' &&
+		typeof x.value === 'string';
+
+const services: {
+		[x: string]: (id: string, username: string) => any
+	} = {
+	'misskey:authentication:twitter': (userId, screenName) => ({ userId, screenName }),
+	'misskey:authentication:github': (id, login) => ({ id, login }),
+	'misskey:authentication:discord': (id, name) => $discord(id, name)
+};
+
+const $discord = (id: string, name: string) => {
+	if (typeof name !== 'string')
+		name = 'unknown#0000';
+	const [username, discriminator] = name.split('#');
+	return { id, username, discriminator };
+};
+
+function addService(target: { [x: string]: any }, source: IIdentifier) {
+	const service = services[source.name];
+
+	if (typeof source.value !== 'string')
+		source.value = 'unknown';
+
+	const [id, username] = source.value.split('@');
+
+	if (service)
+		target[source.name.split(':')[2]] = service(id, username);
+}
+
+export function analyzeAttachments(attachments: ITag[]) {
+	const fields: {
+		name: string,
+		value: string
+	}[] = [];
+	const services: { [x: string]: any } = {};
+
+	if (Array.isArray(attachments)) {
+		for (const attachment of attachments.filter(isPropertyValue)) {
+			if (isPropertyValue(attachment.identifier!)) {
+				addService(services, attachment.identifier!);
+			} else {
+				fields.push({
+					name: attachment.name!,
+					value: fromHtml(attachment.value!)
+				});
+			}
+		}
+	}
+
+	return { fields, services };
+}
+
+export async function updateFeatured(userId: User['id']) {
+	const user = await Users.findOne(userId).then(ensure);
+	if (!Users.isRemoteUser(user)) return;
 	if (!user.featured) return;
 
-	log(`Updating the featured: ${user.uri}`);
+	logger.info(`Updating the featured: ${user.uri}`);
 
 	const resolver = new Resolver();
 
@@ -368,14 +469,24 @@ export async function updateFeatured(userId: mongo.ObjectID) {
 	if (!Array.isArray(items)) throw new Error(`Collection items is not an array`);
 
 	// Resolve and regist Notes
+	const limit = promiseLimit<Note | null>(2);
 	const featuredNotes = await Promise.all(items
 		.filter(item => item.type === 'Note')
 		.slice(0, 5)
-		.map(item => resolveNote(item, resolver)));
+		.map(item => limit(() => resolveNote(item, resolver))));
 
-	await User.update({ _id: user._id }, {
-		$set: {
-			pinnedNoteIds: featuredNotes.map(note => note._id)
-		}
-	});
+	// delete
+	await UserNotePinings.delete({ userId: user.id });
+
+	// とりあえずidを別の時間で生成して順番を維持
+	let td = 0;
+	for (const note of featuredNotes.filter(note => note != null)) {
+		td -= 1000;
+		UserNotePinings.save({
+			id: genId(new Date(Date.now() + td)),
+			createdAt: new Date(),
+			userId: user.id,
+			noteId: note!.id
+		} as UserNotePining);
+	}
 }

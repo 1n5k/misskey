@@ -1,29 +1,19 @@
 <template>
-<div class="header" :class="navbar">
+<div class="header" :class="navbar" :data-shadow="$store.state.device.useShadow">
 	<div class="body">
 		<div class="post">
 			<button @click="post" :title="$t('title')"><fa icon="pencil-alt"/></button>
 		</div>
 
 		<div class="nav" v-if="$store.getters.isSignedIn">
-			<template v-if="$store.state.device.deckDefault">
-				<div class="deck" :class="{ active: $route.name == 'deck' || $route.name == 'index' }" @click="goToTop">
-					<router-link to="/"><fa icon="columns"/></router-link>
-				</div>
-				<div class="home" :class="{ active: $route.name == 'home' }" @click="goToTop">
-					<router-link to="/home"><fa icon="home"/></router-link>
-				</div>
-			</template>
-			<template v-else>
-				<div class="home" :class="{ active: $route.name == 'home' || $route.name == 'index' }" @click="goToTop">
-					<router-link to="/"><fa icon="home"/></router-link>
-				</div>
-				<div class="deck" :class="{ active: $route.name == 'deck' }" @click="goToTop">
-					<router-link to="/deck"><fa icon="columns"/></router-link>
-				</div>
-			</template>
-			<div class="messaging">
-				<a @click="messaging"><fa icon="comments"/><template v-if="hasUnreadMessagingMessage"><fa icon="circle"/></template></a>
+			<div class="home" :class="{ active: $route.name == 'index' }" @click="goToTop">
+				<router-link to="/"><fa icon="home"/></router-link>
+			</div>
+			<div class="featured" :class="{ active: $route.name == 'featured' }">
+				<router-link to="/featured"><fa :icon="faNewspaper"/></router-link>
+			</div>
+			<div class="explore" :class="{ active: $route.name == 'explore' || $route.name == 'explore-tag' }">
+				<router-link to="/explore"><fa :icon="faHashtag"/></router-link>
 			</div>
 			<div class="game">
 				<a @click="game"><fa icon="gamepad"/><template v-if="hasGameInvitations"><fa icon="circle"/></template></a>
@@ -37,30 +27,34 @@
 			<div ref="notificationsButton" :class="{ active: showNotifications }">
 				<a @click="notifications"><fa :icon="['far', 'bell']"/></a>
 			</div>
+			<div class="messaging">
+				<a @click="messaging"><fa icon="comments"/><template v-if="hasUnreadMessagingMessage"><fa icon="circle"/></template></a>
+			</div>
 			<div>
 				<a @click="settings"><fa icon="cog"/></a>
 			</div>
-		</div>
-
-		<div class="account">
-			<router-link :to="`/@${ $store.state.i.username }`">
-				<mk-avatar class="avatar" :user="$store.state.i"/>
-			</router-link>
-
-			<div class="nav menu">
-				<div class="signout">
-					<a @click="signout"><fa icon="power-off"/></a>
-				</div>
-				<div>
-					<router-link to="/i/favorites"><fa icon="star"/></router-link>
-				</div>
-				<div v-if="($store.state.i.isLocked || $store.state.i.carefulBot)">
-					<a @click="followRequests"><fa :icon="['far', 'envelope']"/><i v-if="$store.state.i.pendingReceivedFollowRequestsCount">{{ $store.state.i.pendingReceivedFollowRequestsCount }}</i></a>
-				</div>
+			<div class="signout">
+				<a @click="signout"><fa icon="power-off"/></a>
 			</div>
-		</div>
-
-		<div class="nav dark">
+			<div>
+				<router-link to="/i/favorites"><fa icon="star"/></router-link>
+			</div>
+			<div v-if="($store.state.i.isLocked || $store.state.i.carefulBot)">
+				<a @click="followRequests"><fa :icon="['far', 'envelope']"/><i v-if="$store.state.i.pendingReceivedFollowRequestsCount">{{ $store.state.i.pendingReceivedFollowRequestsCount }}</i></a>
+			</div>
+			<div class="account">
+				<router-link :to="`/@${ $store.state.i.username }`">
+					<mk-avatar class="avatar" :user="$store.state.i"/>
+				</router-link>
+			</div>
+			<div>
+				<template v-if="$store.state.device.inDeckMode">
+					<a @click="toggleDeckMode(false)"><fa icon="home"/></a>
+				</template>
+				<template v-else>
+					<a @click="toggleDeckMode(true)"><fa icon="columns"/></a>
+				</template>
+			</div>
 			<div>
 				<a @click="dark"><template v-if="$store.state.device.darkmode"><fa icon="moon"/></template><template v-else><fa :icon="['far', 'moon']"/></template></a>
 			</div>
@@ -68,7 +62,7 @@
 	</div>
 
 	<transition :name="`slide-${navbar}`">
-		<div class="notifications" v-if="showNotifications" ref="notifications" :class="navbar">
+		<div class="notifications" v-if="showNotifications" ref="notifications" :class="navbar" :data-shadow="$store.state.device.useShadow">
 			<mk-notifications/>
 		</div>
 	</transition>
@@ -78,13 +72,12 @@
 <script lang="ts">
 import Vue from 'vue';
 import i18n from '../../../i18n';
-import MkUserListsWindow from './user-lists-window.vue';
-import MkFollowRequestsWindow from './received-follow-requests-window.vue';
 import MkSettingsWindow from './settings-window.vue';
 import MkDriveWindow from './drive-window.vue';
 import MkMessagingWindow from './messaging-window.vue';
 import MkGameWindow from './game-window.vue';
 import contains from '../../../common/scripts/contains';
+import { faNewspaper, faHashtag } from '@fortawesome/free-solid-svg-icons';
 
 export default Vue.extend({
 	i18n: i18n('desktop/views/components/ui.sidebar.vue'),
@@ -92,7 +85,8 @@ export default Vue.extend({
 		return {
 			hasGameInvitations: false,
 			connection: null,
-			showNotifications: false
+			showNotifications: false,
+			faNewspaper, faHashtag
 		};
 	},
 
@@ -111,7 +105,7 @@ export default Vue.extend({
 			this.connection = this.$root.stream.useSharedConnection('main');
 
 			this.connection.on('reversiInvited', this.onReversiInvited);
-			this.connection.on('reversi_no_invites', this.onReversiNoInvites);
+			this.connection.on('reversiNoInvites', this.onReversiNoInvites);
 		}
 	},
 
@@ -122,6 +116,11 @@ export default Vue.extend({
 	},
 
 	methods: {
+		toggleDeckMode(deck) {
+			this.$store.commit('device/set', { key: 'deckMode', value: deck });
+			location.replace('/');
+		},
+
 		onReversiInvited() {
 			this.hasGameInvitations = true;
 		},
@@ -147,10 +146,7 @@ export default Vue.extend({
 		},
 
 		list() {
-			const w = this.$root.new(MkUserListsWindow);
-			w.$once('choosen', list => {
-				this.$router.push(`i/lists/${ list.id }`);
-			});
+			this.$root.new(MkUserListsWindow);
 		},
 
 		followRequests() {
@@ -171,16 +167,16 @@ export default Vue.extend({
 
 		openNotifications() {
 			this.showNotifications = true;
-			Array.from(document.querySelectorAll('body *')).forEach(el => {
+			for (const el of Array.from(document.querySelectorAll('body *'))) {
 				el.addEventListener('mousedown', this.onMousedown);
-			});
+			}
 		},
 
 		closeNotifications() {
 			this.showNotifications = false;
-			Array.from(document.querySelectorAll('body *')).forEach(el => {
+			for (const el of Array.from(document.querySelectorAll('body *'))) {
 				el.removeEventListener('mousedown', this.onMousedown);
-			});
+			}
 		},
 
 		onMousedown(e) {
@@ -225,11 +221,15 @@ export default Vue.extend({
 
 	&.left
 		left 0
-		box-shadow var(--shadowRight)
+
+		&[data-shadow]
+			box-shadow 4px 0 4px rgba(0, 0, 0, 0.1)
 
 	&.right
 		right 0
-		box-shadow var(--shadowLeft)
+
+		&[data-shadow]
+			box-shadow -4px 0 4px rgba(0, 0, 0, 0.1)
 
 	> .body
 		position fixed
@@ -273,44 +273,23 @@ export default Vue.extend({
 
 		> .nav.bottom
 			position absolute
-			bottom 128px
+			bottom 0
 			left 0
 
-		> .account
-			position absolute
-			bottom 64px
-			left 0
-			width $width
-			height $width
-			padding 14px
+			> .account
+				width $width
+				height $width
+				padding 14px
 
-			> .menu
-				display none
-				position absolute
-				bottom 64px
-				left 0
-				background var(--desktopHeaderBg)
-
-			&:hover
-				> .menu
+				> *
 					display block
-
-			> *:not(.menu)
-				display block
-				width 100%
-				height 100%
-
-				> .avatar
-					pointer-events none
 					width 100%
 					height 100%
 
-		> .dark
-			position absolute
-			bottom 0
-			left 0
-			width $width
-			height $width
+					> .avatar
+						pointer-events none
+						width 100%
+						height 100%
 
 	> .notifications
 		position fixed
@@ -322,11 +301,15 @@ export default Vue.extend({
 
 		&.left
 			left $width
-			box-shadow var(--shadowRight)
+
+			&[data-shadow]
+				box-shadow 4px 0 4px rgba(0, 0, 0, 0.1)
 
 		&.right
 			right $width
-			box-shadow var(--shadowLeft)
+
+			&[data-shadow]
+				box-shadow -4px 0 4px rgba(0, 0, 0, 0.1)
 
 	.nav
 		> *

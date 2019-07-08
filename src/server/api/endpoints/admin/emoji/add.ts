@@ -1,14 +1,19 @@
 import $ from 'cafy';
-import Emoji from '../../../../../models/emoji';
 import define from '../../../define';
+import { detectUrlMine } from '../../../../../misc/detect-url-mine';
+import { Emojis } from '../../../../../models';
+import { genId } from '../../../../../misc/gen-id';
+import { getConnection } from 'typeorm';
 
 export const meta = {
 	desc: {
 		'ja-JP': 'カスタム絵文字を追加します。'
 	},
 
+	tags: ['admin'],
+
 	requireCredential: true,
-	requireAdmin: true,
+	requireModerator: true,
 
 	params: {
 		name: {
@@ -20,22 +25,28 @@ export const meta = {
 		},
 
 		aliases: {
-			validator: $.arr($.str.min(1)).optional,
+			validator: $.optional.arr($.str.min(1)),
 			default: [] as string[]
 		}
 	}
 };
 
-export default define(meta, (ps) => new Promise(async (res, rej) => {
-	const emoji = await Emoji.insert({
+export default define(meta, async (ps) => {
+	const type = await detectUrlMine(ps.url);
+
+	const emoji = await Emojis.save({
+		id: genId(),
 		updatedAt: new Date(),
 		name: ps.name,
 		host: null,
 		aliases: ps.aliases,
-		url: ps.url
+		url: ps.url,
+		type,
 	});
 
-	res({
-		id: emoji._id
-	});
-}));
+	await getConnection().queryResultCache!.remove(['meta_emojis']);
+
+	return {
+		id: emoji.id
+	};
+});

@@ -6,7 +6,7 @@
 				<p @click="click(item)"><i v-if="item.icon" :class="$style.icon"><fa :icon="item.icon"/></i>{{ item.text }}</p>
 			</template>
 			<template v-else-if="item.type == 'link'">
-				<a :href="item.href" :target="item.target" @click="click(item)"><i v-if="item.icon" :class="$style.icon"><fa :icon="item.icon"/></i>{{ item.text }}</a>
+				<a :href="item.href" :target="item.target" @click="click(item)" :download="item.download"><i v-if="item.icon" :class="$style.icon"><fa :icon="item.icon"/></i>{{ item.text }}</a>
 			</template>
 			<template v-else-if="item.type == 'nest'">
 				<p><i v-if="item.icon" :class="$style.icon"><fa :icon="item.icon"/></i>{{ item.text }}...<span class="caret"><fa icon="caret-right"/></span></p>
@@ -46,7 +46,7 @@ export default Vue.extend({
 		&.divider
 			margin-top $padding
 			padding-top $padding
-			border-top solid 1px var(--faceDivider)
+			border-top solid var(--lineWidth) var(--faceDivider)
 
 		&.nest
 			> p

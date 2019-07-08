@@ -1,142 +1,253 @@
 import { Buffer } from 'buffer';
 import * as fs from 'fs';
 
-import * as mongodb from 'mongodb';
 import * as crypto from 'crypto';
-import * as debug from 'debug';
-import fileType = require('file-type');
 import * as Minio from 'minio';
 import * as uuid from 'uuid';
 import * as sharp from 'sharp';
 
-import DriveFile, { IMetadata, getDriveFileBucket, IDriveFile } from '../../models/drive-file';
-import DriveFolder from '../../models/drive-folder';
-import { pack } from '../../models/drive-file';
-import { publishMainStream, publishDriveStream } from '../../stream';
-import { isLocalUser, IUser, IRemoteUser } from '../../models/user';
-import delFile from './delete-file';
-import config from '../../config';
-import { getDriveFileThumbnailBucket } from '../../models/drive-file-thumbnail';
-import driveChart from '../../chart/drive';
-import perUserDriveChart from '../../chart/per-user-drive';
-import fetchMeta from '../../misc/fetch-meta';
+import { publishMainStream, publishDriveStream } from '../stream';
+import { deleteFile } from './delete-file';
+import { fetchMeta } from '../../misc/fetch-meta';
+import { GenerateVideoThumbnail } from './generate-video-thumbnail';
+import { driveLogger } from './logger';
+import { IImage, convertToJpeg, convertToWebp, convertToPng, convertToGif, convertToApng } from './image-processor';
+import { contentDisposition } from '../../misc/content-disposition';
+import { detectMine } from '../../misc/detect-mine';
+import { DriveFiles, DriveFolders, Users, Instances, UserProfiles } from '../../models';
+import { InternalStorage } from './internal-storage';
+import { DriveFile } from '../../models/entities/drive-file';
+import { IRemoteUser, User } from '../../models/entities/user';
+import { driveChart, perUserDriveChart, instanceChart } from '../chart';
+import { genId } from '../../misc/gen-id';
+import { isDuplicateKeyValueError } from '../../misc/is-duplicate-key-value-error';
 
-const log = debug('misskey:drive:add-file');
+const logger = driveLogger.createSubLogger('register', 'yellow');
 
-async function save(path: string, name: string, type: string, hash: string, size: number, metadata: any): Promise<IDriveFile> {
-	let thumbnail: Buffer;
+/***
+ * Save file
+ * @param path Path for original
+ * @param name Name for original
+ * @param type Content-Type for original
+ * @param hash Hash for original
+ * @param size Size for original
+ */
+async function save(file: DriveFile, path: string, name: string, type: string, hash: string, size: number): Promise<DriveFile> {
+	// thunbnail, webpublic を必要なら生成
+	const alts = await generateAlts(path, type, !file.uri);
 
-	if (['image/jpeg', 'image/png', 'image/webp'].includes(type)) {
-		thumbnail = await sharp(path)
-			.resize(300)
-			.jpeg({
-				quality: 50,
-				progressive: true
-			})
-			.toBuffer();
-	}
+	const meta = await fetchMeta();
 
-	if (config.drive && config.drive.storage == 'minio') {
-		const minio = new Minio.Client(config.drive.config);
-
+	if (meta.useObjectStorage) {
+		//#region ObjectStorage params
 		let [ext] = (name.match(/\.([a-zA-Z0-9_-]+)$/) || ['']);
 
 		if (ext === '') {
 			if (type === 'image/jpeg') ext = '.jpg';
 			if (type === 'image/png') ext = '.png';
 			if (type === 'image/webp') ext = '.webp';
+			if (type === 'image/apng') ext = '.apng';
+			if (type === 'image/vnd.mozilla.apng') ext = '.apng';
 		}
 
-		const key = `${config.drive.prefix}/${uuid.v4()}${ext}`;
-		const thumbnailKey = `${config.drive.prefix}/${uuid.v4()}.jpg`;
+		const baseUrl = meta.objectStorageBaseUrl
+			|| `${ meta.objectStorageUseSSL ? 'https' : 'http' }://${ meta.objectStorageEndpoint }${ meta.objectStoragePort ? `:${meta.objectStoragePort}` : '' }/${ meta.objectStorageBucket }`;
 
-		const baseUrl = config.drive.baseUrl
-			|| `${ config.drive.config.useSSL ? 'https' : 'http' }://${ config.drive.config.endPoint }${ config.drive.config.port ? `:${config.drive.config.port}` : '' }/${ config.drive.bucket }`;
+		// for original
+		const key = `${meta.objectStoragePrefix}/${uuid.v4()}${ext}`;
+		const url = `${ baseUrl }/${ key }`;
 
-		await minio.putObject(config.drive.bucket, key, fs.createReadStream(path), size, {
-			'Content-Type': type,
-			'Cache-Control': 'max-age=31536000, immutable'
-		});
+		// for alts
+		let webpublicKey: string | null = null;
+		let webpublicUrl: string | null = null;
+		let thumbnailKey: string | null = null;
+		let thumbnailUrl: string | null = null;
+		//#endregion
 
-		if (thumbnail) {
-			await minio.putObject(config.drive.bucket, thumbnailKey, thumbnail, size, {
-				'Content-Type': 'image/jpeg',
-				'Cache-Control': 'max-age=31536000, immutable'
-			});
+		//#region Uploads
+		logger.info(`uploading original: ${key}`);
+		const uploads = [
+			upload(key, fs.createReadStream(path), type, name)
+		];
+
+		if (alts.webpublic) {
+			webpublicKey = `${meta.objectStoragePrefix}/${uuid.v4()}.${alts.webpublic.ext}`;
+			webpublicUrl = `${ baseUrl }/${ webpublicKey }`;
+
+			logger.info(`uploading webpublic: ${webpublicKey}`);
+			uploads.push(upload(webpublicKey, alts.webpublic.data, alts.webpublic.type, name));
 		}
 
-		Object.assign(metadata, {
-			withoutChunks: true,
-			storage: 'minio',
-			storageProps: {
-				key: key,
-				thumbnailKey: thumbnailKey
-			},
-			url: `${ baseUrl }/${ key }`,
-			thumbnailUrl: thumbnail ? `${ baseUrl }/${ thumbnailKey }` : null
-		});
+		if (alts.thumbnail) {
+			thumbnailKey = `${meta.objectStoragePrefix}/${uuid.v4()}.${alts.thumbnail.ext}`;
+			thumbnailUrl = `${ baseUrl }/${ thumbnailKey }`;
 
-		const file = await DriveFile.insert({
-			length: size,
-			uploadDate: new Date(),
-			md5: hash,
-			filename: name,
-			metadata: metadata,
-			contentType: type
-		});
-
-		return file;
-	} else {
-		// Get MongoDB GridFS bucket
-		const bucket = await getDriveFileBucket();
-
-		const file = await new Promise<IDriveFile>((resolve, reject) => {
-			const writeStream = bucket.openUploadStream(name, {
-				contentType: type,
-				metadata
-			});
-
-			writeStream.once('finish', resolve);
-			writeStream.on('error', reject);
-
-			fs.createReadStream(path).pipe(writeStream);
-		});
-
-		if (thumbnail) {
-			const thumbnailBucket = await getDriveFileThumbnailBucket();
-
-			await new Promise<IDriveFile>((resolve, reject) => {
-				const writeStream = thumbnailBucket.openUploadStream(name, {
-					contentType: 'image/jpeg',
-					metadata: {
-						originalId: file._id
-					}
-				});
-
-				writeStream.once('finish', resolve);
-				writeStream.on('error', reject);
-				writeStream.end(thumbnail);
-			});
+			logger.info(`uploading thumbnail: ${thumbnailKey}`);
+			uploads.push(upload(thumbnailKey, alts.thumbnail.data, alts.thumbnail.type));
 		}
 
-		return file;
+		await Promise.all(uploads);
+		//#endregion
+
+		file.url = url;
+		file.thumbnailUrl = thumbnailUrl;
+		file.webpublicUrl = webpublicUrl;
+		file.accessKey = key;
+		file.thumbnailAccessKey = thumbnailKey;
+		file.webpublicAccessKey = webpublicKey;
+		file.name = name;
+		file.type = type;
+		file.md5 = hash;
+		file.size = size;
+		file.storedInternal = false;
+
+		return await DriveFiles.save(file);
+	} else { // use internal storage
+		const accessKey = uuid.v4();
+		const thumbnailAccessKey = uuid.v4();
+		const webpublicAccessKey = uuid.v4();
+
+		const url = InternalStorage.saveFromPath(accessKey, path);
+
+		let thumbnailUrl: string | null = null;
+		let webpublicUrl: string | null = null;
+
+		if (alts.thumbnail) {
+			thumbnailUrl = InternalStorage.saveFromBuffer(thumbnailAccessKey, alts.thumbnail.data);
+			logger.info(`thumbnail stored: ${thumbnailAccessKey}`);
+		}
+
+		if (alts.webpublic) {
+			webpublicUrl = InternalStorage.saveFromBuffer(webpublicAccessKey, alts.webpublic.data);
+			logger.info(`web stored: ${webpublicAccessKey}`);
+		}
+
+		file.storedInternal = true;
+		file.url = url;
+		file.thumbnailUrl = thumbnailUrl;
+		file.webpublicUrl = webpublicUrl;
+		file.accessKey = accessKey;
+		file.thumbnailAccessKey = thumbnailAccessKey;
+		file.webpublicAccessKey = webpublicAccessKey;
+		file.name = name;
+		file.type = type;
+		file.md5 = hash;
+		file.size = size;
+
+		return await DriveFiles.save(file);
 	}
 }
 
-async function deleteOldFile(user: IRemoteUser) {
-	const oldFile = await DriveFile.findOne({
-		_id: {
-			$nin: [user.avatarId, user.bannerId]
-		},
-		'metadata.userId': user._id
-	}, {
-		sort: {
-			_id: 1
+/**
+ * Generate webpublic, thumbnail, etc
+ * @param path Path for original
+ * @param type Content-Type for original
+ * @param generateWeb Generate webpublic or not
+ */
+export async function generateAlts(path: string, type: string, generateWeb: boolean) {
+	// #region webpublic
+	let webpublic: IImage | null = null;
+
+	if (generateWeb) {
+		logger.info(`creating web image`);
+
+		try {
+			if (['image/jpeg'].includes(type)) {
+				webpublic = await convertToJpeg(path, 2048, 2048);
+			} else if (['image/webp'].includes(type)) {
+				webpublic = await convertToWebp(path, 2048, 2048);
+			} else if (['image/png'].includes(type)) {
+				webpublic = await convertToPng(path, 2048, 2048);
+			} else if (['image/apng', 'image/vnd.mozilla.apng'].includes(type)) {
+				webpublic = await convertToApng(path);
+			} else if (['image/gif'].includes(type)) {
+				webpublic = await convertToGif(path);
+			} else {
+				logger.info(`web image not created (not an image)`);
+			}
+		} catch (e) {
+			logger.warn(`web image not created (an error occured)`, e);
 		}
+	} else {
+		logger.info(`web image not created (from remote)`);
+	}
+	// #endregion webpublic
+
+	// #region thumbnail
+	let thumbnail: IImage | null = null;
+
+	try {
+		if (['image/jpeg', 'image/webp'].includes(type)) {
+			thumbnail = await convertToJpeg(path, 498, 280);
+		} else if (['image/png'].includes(type)) {
+			thumbnail = await convertToPng(path, 498, 280);
+		} else if (['image/gif'].includes(type)) {
+			thumbnail = await convertToGif(path);
+		} else if (['image/apng', 'image/vnd.mozilla.apng'].includes(type)) {
+			thumbnail = await convertToApng(path);
+		} else if (type.startsWith('video/')) {
+			try {
+				thumbnail = await GenerateVideoThumbnail(path);
+			} catch (e) {
+				logger.error(`GenerateVideoThumbnail failed: ${e}`);
+			}
+		}
+	} catch (e) {
+		logger.warn(`thumbnail not created (an error occured)`, e);
+	}
+	// #endregion thumbnail
+
+	return {
+		webpublic,
+		thumbnail,
+	};
+}
+
+/**
+ * Upload to ObjectStorage
+ */
+async function upload(key: string, stream: fs.ReadStream | Buffer, type: string, filename?: string) {
+	if (type === 'image/apng') type = 'image/png';
+
+	const meta = await fetchMeta();
+
+	const minio = new Minio.Client({
+		endPoint: meta.objectStorageEndpoint!,
+		region: meta.objectStorageRegion ? meta.objectStorageRegion : undefined,
+		port: meta.objectStoragePort ? meta.objectStoragePort : undefined,
+		useSSL: meta.objectStorageUseSSL,
+		accessKey: meta.objectStorageAccessKey!,
+		secretKey: meta.objectStorageSecretKey!,
 	});
 
+	const metadata = {
+		'Content-Type': type,
+		'Cache-Control': 'max-age=31536000, immutable'
+	} as Minio.ItemBucketMetadata;
+
+	if (filename) metadata['Content-Disposition'] = contentDisposition('inline', filename);
+
+	await minio.putObject(meta.objectStorageBucket!, key, stream, undefined, metadata);
+}
+
+async function deleteOldFile(user: IRemoteUser) {
+	const q = DriveFiles.createQueryBuilder('file')
+		.where('file.userId = :userId', { userId: user.id });
+
+	if (user.avatarId) {
+		q.andWhere('file.id != :avatarId', { avatarId: user.avatarId });
+	}
+
+	if (user.bannerId) {
+		q.andWhere('file.id != :bannerId', { bannerId: user.bannerId });
+	}
+
+	q.orderBy('file.id', 'ASC');
+
+	const oldFile = await q.getOne();
+
 	if (oldFile) {
-		delFile(oldFile, true);
+		deleteFile(oldFile, true);
 	}
 }
 
@@ -149,20 +260,24 @@ async function deleteOldFile(user: IRemoteUser) {
  * @param comment Comment
  * @param folderId Folder ID
  * @param force If set to true, forcibly upload the file even if there is a file with the same hash.
+ * @param isLink Do not save file to local
+ * @param url URL of source (URLからアップロードされた場合(ローカル/リモート)の元URL)
+ * @param uri URL of source (リモートインスタンスのURLからアップロードされた場合の元URL)
+ * @param sensitive Mark file as sensitive
  * @return Created drive file
  */
 export default async function(
-	user: IUser,
+	user: User,
 	path: string,
-	name: string = null,
-	comment: string = null,
-	folderId: mongodb.ObjectID = null,
+	name: string | null = null,
+	comment: string | null = null,
+	folderId: any = null,
 	force: boolean = false,
 	isLink: boolean = false,
-	url: string = null,
-	uri: string = null,
-	sensitive: boolean = null
-): Promise<IDriveFile> {
+	url: string | null = null,
+	uri: string | null = null,
+	sensitive: boolean | null = null
+): Promise<DriveFile> {
 	// Calc md5 hash
 	const calcHash = new Promise<string>((res, rej) => {
 		const readable = fs.createReadStream(path);
@@ -179,27 +294,6 @@ export default async function(
 			});
 	});
 
-	// Detect content type
-	const detectMime = new Promise<[string, string]>((res, rej) => {
-		const readable = fs.createReadStream(path);
-		readable
-			.on('error', rej)
-			.once('data', (buffer: Buffer) => {
-				readable.destroy();
-				const type = fileType(buffer);
-				if (type) {
-					res([type.mime, type.ext]);
-				} else {
-					// 種類が同定できなかったら application/octet-stream にする
-					res(['application/octet-stream', null]);
-				}
-			})
-			.on('end', () => {
-				// maybe 0 bytes
-				res(['application/octet-stream', null]);
-			});
-	});
-
 	// Get file size
 	const getFileSize = new Promise<number>((res, rej) => {
 		fs.stat(path, (err, stats) => {
@@ -208,64 +302,42 @@ export default async function(
 		});
 	});
 
-	const [hash, [mime, ext], size] = await Promise.all([calcHash, detectMime, getFileSize]);
+	const [hash, [mime, ext], size] = await Promise.all([calcHash, detectMine(path), getFileSize]);
 
-	log(`hash: ${hash}, mime: ${mime}, ext: ${ext}, size: ${size}`);
+	logger.info(`hash: ${hash}, mime: ${mime}, ext: ${ext}, size: ${size}`);
 
 	// detect name
 	const detectedName = name || (ext ? `untitled.${ext}` : 'untitled');
 
 	if (!force) {
 		// Check if there is a file with the same hash
-		const much = await DriveFile.findOne({
+		const much = await DriveFiles.findOne({
 			md5: hash,
-			'metadata.userId': user._id,
-			'metadata.deletedAt': { $exists: false }
+			userId: user.id,
 		});
 
 		if (much) {
-			log(`file with same hash is found: ${much._id}`);
+			logger.info(`file with same hash is found: ${much.id}`);
 			return much;
 		}
 	}
 
 	//#region Check drive usage
 	if (!isLink) {
-		const usage = await DriveFile
-			.aggregate([{
-				$match: {
-					'metadata.userId': user._id,
-					'metadata.deletedAt': { $exists: false }
-				}
-			}, {
-				$project: {
-					length: true
-				}
-			}, {
-				$group: {
-					_id: null,
-					usage: { $sum: '$length' }
-				}
-			}])
-			.then((aggregates: any[]) => {
-				if (aggregates.length > 0) {
-					return aggregates[0].usage;
-				}
-				return 0;
-			});
-
-		log(`drive usage is ${usage}`);
+		const usage = await DriveFiles.clacDriveUsageOf(user);
 
 		const instance = await fetchMeta();
-		const driveCapacity = 1024 * 1024 * (isLocalUser(user) ? instance.localDriveCapacityMb : instance.remoteDriveCapacityMb);
+		const driveCapacity = 1024 * 1024 * (Users.isLocalUser(user) ? instance.localDriveCapacityMb : instance.remoteDriveCapacityMb);
+
+		logger.debug(`drive usage is ${usage} (max: ${driveCapacity})`);
 
 		// If usage limit exceeded
 		if (usage + size > driveCapacity) {
-			if (isLocalUser(user)) {
-				throw 'no-free-space';
+			if (Users.isLocalUser(user)) {
+				throw new Error('no-free-space');
 			} else {
 				// (アバターまたはバナーを含まず)最も古いファイルを削除する
-				deleteOldFile(user);
+				deleteOldFile(user as IRemoteUser);
 			}
 		}
 	}
@@ -276,33 +348,33 @@ export default async function(
 			return null;
 		}
 
-		const driveFolder = await DriveFolder.findOne({
-			_id: folderId,
-			userId: user._id
+		const driveFolder = await DriveFolders.findOne({
+			id: folderId,
+			userId: user.id
 		});
 
-		if (driveFolder == null) throw 'folder-not-found';
+		if (driveFolder == null) throw new Error('folder-not-found');
 
 		return driveFolder;
 	};
 
 	const properties: {[key: string]: any} = {};
 
-	let propPromises: Array<Promise<void>> = [];
+	let propPromises: Promise<void>[] = [];
 
-	const isImage = ['image/jpeg', 'image/gif', 'image/png', 'image/webp'].includes(mime);
+	const isImage = ['image/jpeg', 'image/gif', 'image/png', 'image/apng', 'image/vnd.mozilla.apng', 'image/webp'].includes(mime);
 
 	if (isImage) {
 		const img = sharp(path);
 
 		// Calc width and height
 		const calcWh = async () => {
-			log('calculate image width and height...');
+			logger.debug('calculating image width and height...');
 
 			// Calculate width and height
 			const meta = await img.metadata();
 
-			log(`image width and height is calculated: ${meta.width}, ${meta.height}`);
+			logger.debug(`image width and height is calculated: ${meta.width}, ${meta.height}`);
 
 			properties['width'] = meta.width;
 			properties['height'] = meta.height;
@@ -310,7 +382,7 @@ export default async function(
 
 		// Calc average color
 		const calcAvg = async () => {
-			log('calculate average color...');
+			logger.debug('calculating average color...');
 
 			try {
 				const info = await (img as any).stats();
@@ -319,91 +391,90 @@ export default async function(
 				const g = Math.round(info.channels[1].mean);
 				const b = Math.round(info.channels[2].mean);
 
-				log(`average color is calculated: ${r}, ${g}, ${b}`);
+				logger.debug(`average color is calculated: ${r}, ${g}, ${b}`);
 
-				const value = info.isOpaque ? [r, g, b] : [r, g, b, 255];
-
-				properties['avgColor'] = value;
+				properties['avgColor'] = `rgb(${r},${g},${b})`;
 			} catch (e) { }
 		};
 
 		propPromises = [calcWh(), calcAvg()];
 	}
 
+	const profile = await UserProfiles.findOne(user.id);
+
 	const [folder] = await Promise.all([fetchFolder(), Promise.all(propPromises)]);
 
-	const metadata = {
-		userId: user._id,
-		_user: {
-			host: user.host
-		},
-		folderId: folder !== null ? folder._id : null,
-		comment: comment,
-		properties: properties,
-		withoutChunks: isLink,
-		isRemote: isLink,
-		isSensitive: (sensitive !== null && sensitive !== undefined)
+	let file = new DriveFile();
+	file.id = genId();
+	file.createdAt = new Date();
+	file.userId = user.id;
+	file.userHost = user.host;
+	file.folderId = folder !== null ? folder.id : null;
+	file.comment = comment;
+	file.properties = properties;
+	file.isLink = isLink;
+	file.isSensitive = Users.isLocalUser(user) && profile!.alwaysMarkNsfw ? true :
+		(sensitive !== null && sensitive !== undefined)
 			? sensitive
-			: isLocalUser(user)
-				? user.settings.alwaysMarkNsfw
-					? true
-					: false
-				: false
-	} as IMetadata;
+			: false;
 
 	if (url !== null) {
-		metadata.src = url;
+		file.src = url;
 
 		if (isLink) {
-			metadata.url = url;
+			file.url = url;
+			file.thumbnailUrl = url;
+			file.webpublicUrl = url;
 		}
 	}
 
 	if (uri !== null) {
-		metadata.uri = uri;
+		file.uri = uri;
 	}
-
-	let driveFile: IDriveFile;
 
 	if (isLink) {
 		try {
-			driveFile = await DriveFile.insert({
-				length: 0,
-				uploadDate: new Date(),
-				md5: hash,
-				filename: detectedName,
-				metadata: metadata,
-				contentType: mime
-			});
+			file.size = 0;
+			file.md5 = hash;
+			file.name = detectedName;
+			file.type = mime;
+			file.storedInternal = false;
+
+			file = await DriveFiles.save(file);
 		} catch (e) {
 			// duplicate key error (when already registered)
-			if (e.code === 11000) {
-				log(`already registered ${metadata.uri}`);
+			if (isDuplicateKeyValueError(e)) {
+				logger.info(`already registered ${file.uri}`);
 
-				driveFile = await DriveFile.findOne({
-					'metadata.uri': metadata.uri,
-					'metadata.userId': user._id
-				});
+				file = await DriveFiles.findOne({
+					uri: file.uri,
+					userId: user.id
+				}) as DriveFile;
 			} else {
-				console.error(e);
+				logger.error(e);
 				throw e;
 			}
 		}
 	} else {
-		driveFile = await (save(path, detectedName, mime, hash, size, metadata));
+		file = await (save(file, path, detectedName, mime, hash, size));
 	}
 
-	log(`drive file has been created ${driveFile._id}`);
+	logger.succ(`drive file has been created ${file.id}`);
 
-	pack(driveFile).then(packedFile => {
+	DriveFiles.pack(file).then(packedFile => {
 		// Publish driveFileCreated event
-		publishMainStream(user._id, 'driveFileCreated', packedFile);
-		publishDriveStream(user._id, 'fileCreated', packedFile);
+		publishMainStream(user.id, 'driveFileCreated', packedFile);
+		publishDriveStream(user.id, 'fileCreated', packedFile);
 	});
 
 	// 統計を更新
-	driveChart.update(driveFile, true);
-	perUserDriveChart.update(driveFile, true);
+	driveChart.update(file, true);
+	perUserDriveChart.update(file, true);
+	if (file.userHost !== null) {
+		instanceChart.updateDrive(file, true);
+		Instances.increment({ host: file.userHost }, 'driveUsage', file.size);
+		Instances.increment({ host: file.userHost }, 'driveFiles', 1);
+	}
 
-	return driveFile;
+	return file;
 }

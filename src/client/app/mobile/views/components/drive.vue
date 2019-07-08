@@ -83,7 +83,7 @@ export default Vue.extend({
 			hierarchyFolders: [],
 			selectedFiles: [],
 			info: null,
-			connection: null
+			connection: null,
 
 			fetching: true,
 			fetchingMoreFiles: false,
@@ -297,8 +297,8 @@ export default Vue.extend({
 			let flag = false;
 			const complete = () => {
 				if (flag) {
-					fetchedFolders.forEach(this.appendFolder);
-					fetchedFiles.forEach(this.appendFile);
+					for (const x of fetchedFolders) this.appendFolder(x);
+					for (const x of fetchedFiles) this.appendFile(x);
 					this.fetching = false;
 
 					// 一連の読み込みが完了したイベントを発行
@@ -336,7 +336,7 @@ export default Vue.extend({
 				} else {
 					this.moreFiles = false;
 				}
-				files.forEach(this.appendFile);
+				for (const x of files) this.appendFile(x);
 				this.fetching = false;
 				this.fetchingMoreFiles = false;
 			});
@@ -379,64 +379,69 @@ export default Vue.extend({
 			});
 		},
 
-		openContextMenu() {
-			const fn = window.prompt(this.$t('prompt'));
-			if (fn == null || fn == '') return;
-			switch (fn) {
-				case '1':
-					this.selectLocalFile();
-					break;
-				case '2':
-					this.urlUpload();
-					break;
-				case '3':
-					this.createFolder();
-					break;
-				case '4':
-					this.renameFolder();
-					break;
-				case '5':
-					this.moveFolder();
-					break;
-				case '6':
-					alert(this.$t('deletion-alert'));
-					break;
-			}
-		},
-
 		selectLocalFile() {
 			(this.$refs.file as any).click();
 		},
 
 		createFolder() {
-			const name = window.prompt(this.$t('folder-name'));
-			if (name == null || name == '') return;
-			this.$root.api('drive/folders/create', {
-				name: name,
-				parentId: this.folder ? this.folder.id : undefined
-			}).then(folder => {
-				this.addFolder(folder, true);
+			this.$root.dialog({
+				title: this.$t('folder-name'),
+				input: {
+					default: this.folder.name
+				}
+			}).then(({ result: name }) => {
+				if (!name) {
+					this.$root.dialog({
+						type: 'error',
+						text: this.$t('folder-name-cannot-empty')
+					});
+					return;
+				}
+				this.$root.api('drive/folders/create', {
+					name: name,
+					parentId: this.folder ? this.folder.id : undefined
+				}).then(folder => {
+					this.addFolder(folder, true);
+				});
 			});
 		},
 
 		renameFolder() {
 			if (this.folder == null) {
-				alert(this.$t('root-rename-alert'));
+				this.$root.dialog({
+					type: 'error',
+					text: this.$t('here-is-root')
+				});
 				return;
 			}
-			const name = window.prompt(this.$t('folder-name'), this.folder.name);
-			if (name == null || name == '') return;
-			this.$root.api('drive/folders/update', {
-				name: name,
-				folderId: this.folder.id
-			}).then(folder => {
-				this.cd(folder);
+			this.$root.dialog({
+				title: this.$t('folder-name'),
+				input: {
+					default: this.folder.name
+				}
+			}).then(({ result: name }) => {
+				if (!name) {
+					this.$root.dialog({
+						type: 'error',
+						text: this.$t('cannot-empty')
+					});
+					return;
+				}
+				this.$root.api('drive/folders/update', {
+					name: name,
+					folderId: this.folder.id
+				}).then(folder => {
+					this.cd(folder);
+				});
 			});
 		},
 
 		moveFolder() {
 			if (this.folder == null) {
-				alert(this.$t('root-move-alert'));
+				this.$root.dialog({
+					type: 'error',
+					text: this.$t('here-is-root')
+				});
 				return;
 			}
 			this.$chooseDriveFolder().then(folder => {
@@ -456,12 +461,31 @@ export default Vue.extend({
 				url: url,
 				folderId: this.folder ? this.folder.id : undefined
 			});
-			alert(this.$t('uploading'));
+			this.$root.dialog({
+				type: 'info',
+				text: this.$t('uploading')
+			});
 		},
 
 		onChangeLocalFile() {
-			Array.from((this.$refs.file as any).files)
-				.forEach(f => (this.$refs.uploader as any).upload(f, this.folder));
+			for (const f of Array.from((this.$refs.file as any).files)) {
+				(this.$refs.uploader as any).upload(f, this.folder);
+			}
+		},
+
+		deleteFolder() {
+			if (this.folder == null) {
+				this.$root.dialog({
+					type: 'error',
+					text: this.$t('here-is-root')
+				});
+				return;
+			}
+			this.$root.api('drive/folders/delete', {
+				folderId: this.folder.id
+			}).then(folder => {
+				this.cd(this.folder.parentId);
+			});
 		}
 	}
 });
@@ -573,12 +597,17 @@ export default Vue.extend({
 			bottom 0
 			animation-delay -1.0s
 
-		@keyframes sk-rotate { 100% { transform: rotate(360deg); }}
+		@keyframes sk-rotate {
+			100% {
+				transform: rotate(360deg);
+			}
+		}
 
 		@keyframes sk-bounce {
 			0%, 100% {
 				transform: scale(0.0);
-			} 50% {
+			}
+			50% {
 				transform: scale(1.0);
 			}
 		}

@@ -1,9 +1,12 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../misc/cafy-id';
-import Note from '../../../../models/note';
-import { getFriendIds } from '../../common/get-friends';
-import { packMany } from '../../../../models/note';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
 import define from '../../define';
 import read from '../../../../services/note/read';
+import { Notes, Followings } from '../../../../models';
+import { generateVisibilityQuery } from '../../common/generate-visibility-query';
+import { generateMuteQuery } from '../../common/generate-mute-query';
+import { makePaginationQuery } from '../../common/make-pagination-query';
+import { Brackets } from 'typeorm';
 
 export const meta = {
 	desc: {
@@ -11,85 +14,74 @@ export const meta = {
 		'en-US': 'Get mentions of myself.'
 	},
 
+	tags: ['notes'],
+
 	requireCredential: true,
 
 	params: {
 		following: {
-			validator: $.bool.optional,
+			validator: $.optional.bool,
 			default: false
 		},
 
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 10
 		},
 
 		sinceId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		untilId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		visibility: {
-			validator: $.str.optional,
+			validator: $.optional.str,
 		},
-	}
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'Note',
+		}
+	},
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	// Check if both of sinceId and untilId is specified
-	if (ps.sinceId && ps.untilId) {
-		return rej('cannot set sinceId and untilId');
-	}
+export default define(meta, async (ps, user) => {
+	const followingQuery = Followings.createQueryBuilder('following')
+		.select('following.followeeId')
+		.where('following.followerId = :followerId', { followerId: user.id });
 
-	const query = {
-		deletedAt: null,
+	const query = makePaginationQuery(Notes.createQueryBuilder('note'), ps.sinceId, ps.untilId)
+		.andWhere(new Brackets(qb => { qb
+			.where(`:meId = ANY(note.mentions)`, { meId: user.id })
+			.orWhere(`:meId = ANY(note.visibleUserIds)`, { meId: user.id });
+		}))
+		.leftJoinAndSelect('note.user', 'user');
 
-		$or: [{
-			mentions: user._id
-		}, {
-			visibleUserIds: user._id
-		}]
-	} as any;
-
-	const sort = {
-		_id: -1
-	};
+	generateVisibilityQuery(query, user);
+	generateMuteQuery(query, user);
 
 	if (ps.visibility) {
-		query.visibility = ps.visibility;
+		query.andWhere('note.visibility = :visibility', { visibility: ps.visibility });
 	}
 
 	if (ps.following) {
-		const followingIds = await getFriendIds(user._id);
-
-		query.userId = {
-			$in: followingIds
-		};
+		query.andWhere(`((note.userId IN (${ followingQuery.getQuery() })) OR (note.userId = :meId))`, { meId: user.id });
+		query.setParameters(followingQuery.getParameters());
 	}
 
-	if (ps.sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: ps.sinceId
-		};
-	} else if (ps.untilId) {
-		query._id = {
-			$lt: ps.untilId
-		};
+	const mentions = await query.take(ps.limit!).getMany();
+
+	for (const note of mentions) {
+		read(user.id, note.id);
 	}
 
-	const mentions = await Note
-		.find(query, {
-			limit: ps.limit,
-			sort: sort
-		});
-
-	res(await packMany(mentions, user));
-
-	mentions.forEach(note => read(user._id, note._id));
-}));
+	return await Notes.packMany(mentions, user);
+});

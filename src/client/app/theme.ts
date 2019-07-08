@@ -10,21 +10,45 @@ export type Theme = {
 	props: { [key: string]: string };
 };
 
-export const lightTheme: Theme = require('../theme/light.json5');
-export const darkTheme: Theme = require('../theme/dark.json5');
-export const pinkTheme: Theme = require('../theme/pink.json5');
-export const blackTheme: Theme = require('../theme/black.json5');
-export const halloweenTheme: Theme = require('../theme/halloween.json5');
+export const lightTheme: Theme = require('../themes/light.json5');
+export const darkTheme: Theme = require('../themes/dark.json5');
+export const lavenderTheme: Theme = require('../themes/lavender.json5');
+export const futureTheme: Theme = require('../themes/future.json5');
+export const halloweenTheme: Theme = require('../themes/halloween.json5');
+export const cafeTheme: Theme = require('../themes/cafe.json5');
+export const japaneseSushiSetTheme: Theme = require('../themes/japanese-sushi-set.json5');
+export const gruvboxDarkTheme: Theme = require('../themes/gruvbox-dark.json5');
+export const monokaiTheme: Theme = require('../themes/monokai.json5');
+export const vividTheme: Theme = require('../themes/vivid.json5');
+export const rainyTheme: Theme = require('../themes/rainy.json5');
+export const mauveTheme: Theme = require('../themes/mauve.json5');
+export const grayTheme: Theme = require('../themes/gray.json5');
+export const tweetDeckTheme: Theme = require('../themes/tweet-deck.json5');
 
 export const builtinThemes = [
 	lightTheme,
 	darkTheme,
-	pinkTheme,
-	blackTheme,
-	halloweenTheme
+	lavenderTheme,
+	futureTheme,
+	halloweenTheme,
+	cafeTheme,
+	japaneseSushiSetTheme,
+	gruvboxDarkTheme,
+	monokaiTheme,
+	vividTheme,
+	rainyTheme,
+	mauveTheme,
+	grayTheme,
+	tweetDeckTheme,
 ];
 
 export function applyTheme(theme: Theme, persisted = true) {
+	document.documentElement.classList.add('changing-theme');
+
+	setTimeout(() => {
+		document.documentElement.classList.remove('changing-theme');
+	}, 1000);
+
 	// Deep copy
 	const _theme = JSON.parse(JSON.stringify(theme));
 
@@ -36,9 +60,9 @@ export function applyTheme(theme: Theme, persisted = true) {
 
 	const props = compile(_theme);
 
-	Object.entries(props).forEach(([k, v]) => {
+	for (const [k, v] of Object.entries(props)) {
 		document.documentElement.style.setProperty(`--${k}`, v.toString());
-	});
+	}
 
 	if (persisted) {
 		localStorage.setItem('theme', JSON.stringify(props));
@@ -74,10 +98,9 @@ function compile(theme: Theme): { [key: string]: string } {
 
 	const props = {};
 
-	Object.entries(theme.props).forEach(([k, v]) => {
-		const c = getColor(v);
-		props[k] = genValue(c);
-	});
+	for (const [k, v] of Object.entries(theme.props)) {
+		props[k] = genValue(getColor(v));
+	}
 
 	const primary = getColor(props['primary']);
 
@@ -86,12 +109,12 @@ function compile(theme: Theme): { [key: string]: string } {
 		props['primaryAlpha0' + i] = genValue(color);
 	}
 
-	for (let i = 1; i < 100; i++) {
+	for (let i = 5; i < 100; i += 5) {
 		const color = primary.clone().lighten(i);
 		props['primaryLighten' + i] = genValue(color);
 	}
 
-	for (let i = 1; i < 100; i++) {
+	for (let i = 5; i < 100; i += 5) {
 		const color = primary.clone().darken(i);
 		props['primaryDarken' + i] = genValue(color);
 	}

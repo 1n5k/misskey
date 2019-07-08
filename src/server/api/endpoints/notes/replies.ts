@@ -1,6 +1,10 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../misc/cafy-id';
-import Note, { packMany } from '../../../../models/note';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
 import define from '../../define';
+import { Notes } from '../../../../models';
+import { makePaginationQuery } from '../../common/make-pagination-query';
+import { generateVisibilityQuery } from '../../common/generate-visibility-query';
+import { generateMuteQuery } from '../../common/generate-mute-query';
 
 export const meta = {
 	desc: {
@@ -8,41 +12,59 @@ export const meta = {
 		'en-US': 'Get replies of a note.'
 	},
 
+	tags: ['notes'],
+
 	requireCredential: false,
 
 	params: {
 		noteId: {
 			validator: $.type(ID),
-			transform: transform,
 			desc: {
 				'ja-JP': '対象の投稿のID',
 				'en-US': 'Target note ID'
 			}
 		},
 
+		sinceId: {
+			validator: $.optional.type(ID),
+			desc: {
+				'ja-JP': '指定すると、その投稿を基点としてより新しい投稿を取得します'
+			}
+		},
+
+		untilId: {
+			validator: $.optional.type(ID),
+			desc: {
+				'ja-JP': '指定すると、その投稿を基点としてより古い投稿を取得します'
+			}
+		},
+
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 10
 		},
+	},
 
-		offset: {
-			validator: $.num.optional.min(0),
-			default: 0
-		},
-	}
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'Note',
+		}
+	},
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	// Lookup note
-	const note = await Note.findOne({
-		_id: ps.noteId
-	});
+export default define(meta, async (ps, user) => {
+	const query = makePaginationQuery(Notes.createQueryBuilder('note'), ps.sinceId, ps.untilId)
+		.andWhere('note.replyId = :replyId', { replyId: ps.noteId })
+		.leftJoinAndSelect('note.user', 'user');
 
-	if (note === null) {
-		return rej('note not found');
-	}
+	if (user) generateVisibilityQuery(query, user);
+	if (user) generateMuteQuery(query, user);
 
-	const ids = (note._replyIds || []).slice(ps.offset, ps.offset + ps.limit);
+	const timeline = await query.take(ps.limit!).getMany();
 
-	res(await packMany(ids, user));
-}));
+	return await Notes.packMany(timeline, user);
+});

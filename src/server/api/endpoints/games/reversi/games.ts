@@ -1,71 +1,49 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../../misc/cafy-id';
-import ReversiGame, { pack } from '../../../../../models/games/reversi/game';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
 import define from '../../../define';
+import { ReversiGames } from '../../../../../models';
+import { makePaginationQuery } from '../../../common/make-pagination-query';
+import { Brackets } from 'typeorm';
 
 export const meta = {
+	tags: ['games'],
+
 	params: {
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 10
 		},
 
 		sinceId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		untilId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		my: {
-			validator: $.bool.optional,
+			validator: $.optional.bool,
 			default: false
 		}
 	}
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	// Check if both of sinceId and untilId is specified
-	if (ps.sinceId && ps.untilId) {
-		return rej('cannot set sinceId and untilId');
-	}
+export default define(meta, async (ps, user) => {
+	const query = makePaginationQuery(ReversiGames.createQueryBuilder('game'), ps.sinceId, ps.untilId)
+		.andWhere('game.isStarted = TRUE');
 
-	const q: any = ps.my ? {
-		isStarted: true,
-		$or: [{
-			user1Id: user._id
-		}, {
-			user2Id: user._id
-		}]
-	} : {
-		isStarted: true
-	};
-
-	const sort = {
-		_id: -1
-	};
-
-	if (ps.sinceId) {
-		sort._id = 1;
-		q._id = {
-			$gt: ps.sinceId
-		};
-	} else if (ps.untilId) {
-		q._id = {
-			$lt: ps.untilId
-		};
+	if (ps.my) {
+		query.andWhere(new Brackets(qb => { qb
+			.where('game.user1Id = :userId', { userId: user.id })
+			.orWhere('game.user2Id = :userId', { userId: user.id });
+		}));
 	}
 
 	// Fetch games
-	const games = await ReversiGame.find(q, {
-		sort: sort,
-		limit: ps.limit
-	});
+	const games = await query.take(ps.limit!).getMany();
 
-	// Reponse
-	res(Promise.all(games.map(async (g) => await pack(g, user, {
+	return await Promise.all(games.map((g) => ReversiGames.pack(g, user, {
 		detail: false
-	}))));
-}));
+	})));
+});

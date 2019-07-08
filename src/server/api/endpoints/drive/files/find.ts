@@ -1,11 +1,14 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../../misc/cafy-id';
-import DriveFile, { pack } from '../../../../../models/drive-file';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
 import define from '../../../define';
+import { DriveFiles } from '../../../../../models';
 
 export const meta = {
 	requireCredential: true,
 
-	kind: 'drive-read',
+	tags: ['drive'],
+
+	kind: 'read:drive',
 
 	params: {
 		name: {
@@ -13,23 +16,31 @@ export const meta = {
 		},
 
 		folderId: {
-			validator: $.type(ID).optional.nullable,
-			transform: transform,
+			validator: $.optional.nullable.type(ID),
 			default: null as any,
 			desc: {
 				'ja-JP': 'フォルダID'
 			}
 		},
-	}
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'DriveFile',
+		}
+	},
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	const files = await DriveFile
-		.find({
-			filename: ps.name,
-			'metadata.userId': user._id,
-			'metadata.folderId': ps.folderId
-		});
+export default define(meta, async (ps, user) => {
+	const files = await DriveFiles.find({
+		name: ps.name,
+		userId: user.id,
+		folderId: ps.folderId
+	});
 
-	res(await Promise.all(files.map(file => pack(file))));
-}));
+	return await Promise.all(files.map(file => DriveFiles.pack(file, { self: true })));
+});

@@ -1,28 +1,29 @@
-import * as debug from 'debug';
-
 import Resolver from '../../resolver';
 import post from '../../../../services/note/create';
-import { IRemoteUser, IUser } from '../../../../models/user';
-import { IAnnounce, INote } from '../../type';
+import { IRemoteUser, User } from '../../../../models/entities/user';
+import { IAnnounce, INote, getApId, getApIds } from '../../type';
 import { fetchNote, resolveNote } from '../../models/note';
 import { resolvePerson } from '../../models/person';
+import { apLogger } from '../../logger';
+import { extractDbHost } from '../../../../misc/convert-host';
+import { fetchMeta } from '../../../../misc/fetch-meta';
 
-const log = debug('misskey:activitypub');
+const logger = apLogger;
 
 /**
  * アナウンスアクティビティを捌きます
  */
 export default async function(resolver: Resolver, actor: IRemoteUser, activity: IAnnounce, note: INote): Promise<void> {
-	const uri = activity.id || activity;
+	const uri = getApId(activity);
 
 	// アナウンサーが凍結されていたらスキップ
 	if (actor.isSuspended) {
 		return;
 	}
 
-	if (typeof uri !== 'string') {
-		throw new Error('invalid announce');
-	}
+	// アナウンス先をブロックしてたら中断
+	const meta = await fetchMeta();
+	if (meta.blockedHosts.includes(extractDbHost(uri))) return;
 
 	// 既に同じURIを持つものが登録されていないかチェック
 	const exist = await fetchNote(uri);
@@ -30,30 +31,55 @@ export default async function(resolver: Resolver, actor: IRemoteUser, activity: 
 		return;
 	}
 
-	const renote = await resolveNote(note);
+	// Announce対象をresolve
+	let renote;
+	try {
+		renote = await resolveNote(note);
+	} catch (e) {
+		// 対象が4xxならスキップ
+		if (e.statusCode >= 400 && e.statusCode < 500) {
+			logger.warn(`Ignored announce target ${note.inReplyTo} - ${e.statusCode}`);
+			return;
+		}
+		logger.warn(`Error in announce target ${note.inReplyTo} - ${e.statusCode || e}`);
+		throw e;
+	}
 
-	log(`Creating the (Re)Note: ${uri}`);
+	logger.info(`Creating the (Re)Note: ${uri}`);
 
 	//#region Visibility
-	let visibility = 'public';
-	let visibleUsers: IUser[] = [];
-	if (!note.to.includes('https://www.w3.org/ns/activitystreams#Public')) {
-		if (note.cc.includes('https://www.w3.org/ns/activitystreams#Public')) {
-			visibility = 'home';
-		} else if (note.to.includes(`${actor.uri}/followers`)) {	// TODO: person.followerと照合するべき？
-			visibility = 'followers';
-		} else {
-			visibility = 'specified';
-			visibleUsers = await Promise.all(note.to.map(uri => resolvePerson(uri)));
-		}
+	const to = getApIds(activity.to);
+	const cc = getApIds(activity.cc);
+
+	const visibility = getVisibility(to, cc, actor);
+
+	let visibleUsers: User[] = [];
+	if (visibility == 'specified') {
+		visibleUsers = await Promise.all(to.map(uri => resolvePerson(uri)));
 	}
 	//#endergion
 
 	await post(actor, {
-		createdAt: new Date(activity.published),
+		createdAt: activity.published ? new Date(activity.published) : null,
 		renote,
 		visibility,
 		visibleUsers,
 		uri
 	});
+}
+
+type visibility = 'public' | 'home' | 'followers' | 'specified';
+
+function getVisibility(to: string[], cc: string[], actor: IRemoteUser): visibility {
+	const PUBLIC = 'https://www.w3.org/ns/activitystreams#Public';
+
+	if (to.includes(PUBLIC)) {
+		return 'public';
+	} else if (cc.includes(PUBLIC)) {
+		return 'home';
+	} else if (to.includes(`${actor.uri}/followers`)) {
+		return 'followers';
+	} else {
+		return 'specified';
+	}
 }

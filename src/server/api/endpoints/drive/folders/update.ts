@@ -1,7 +1,9 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../../misc/cafy-id';
-import DriveFolder, { isValidFolderName, pack } from '../../../../../models/drive-folder';
-import { publishDriveStream } from '../../../../../stream';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
+import { publishDriveStream } from '../../../../../services/stream';
 import define from '../../../define';
+import { ApiError } from '../../../error';
+import { DriveFolders } from '../../../../../models';
 
 export const meta = {
 	stability: 'stable',
@@ -11,14 +13,15 @@ export const meta = {
 		'en-US': 'Update specified folder of drive.'
 	},
 
+	tags: ['drive'],
+
 	requireCredential: true,
 
-	kind: 'drive-write',
+	kind: 'write:drive',
 
 	params: {
 		folderId: {
 			validator: $.type(ID),
-			transform: transform,
 			desc: {
 				'ja-JP': '対象のフォルダID',
 				'en-US': 'Target folder ID'
@@ -26,7 +29,7 @@ export const meta = {
 		},
 
 		name: {
-			validator: $.str.optional.pipe(isValidFolderName),
+			validator: $.optional.str.pipe(DriveFolders.validateFolderName),
 			desc: {
 				'ja-JP': 'フォルダ名',
 				'en-US': 'Folder name'
@@ -34,59 +37,75 @@ export const meta = {
 		},
 
 		parentId: {
-			validator: $.type(ID).optional.nullable,
-			transform: transform,
+			validator: $.optional.nullable.type(ID),
 			desc: {
 				'ja-JP': '親フォルダID',
 				'en-US': 'Parent folder ID'
 			}
 		}
+	},
+
+	errors: {
+		noSuchFolder: {
+			message: 'No such folder.',
+			code: 'NO_SUCH_FOLDER',
+			id: 'f7974dac-2c0d-4a27-926e-23583b28e98e'
+		},
+
+		noSuchParentFolder: {
+			message: 'No such parent folder.',
+			code: 'NO_SUCH_PARENT_FOLDER',
+			id: 'ce104e3a-faaf-49d5-b459-10ff0cbbcaa1'
+		},
+
+		recursiveNesting: {
+			message: 'It can not be structured like nesting folders recursively.',
+			code: 'NO_SUCH_PARENT_FOLDER',
+			id: 'ce104e3a-faaf-49d5-b459-10ff0cbbcaa1'
+		},
 	}
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
+export default define(meta, async (ps, user) => {
 	// Fetch folder
-	const folder = await DriveFolder
-		.findOne({
-			_id: ps.folderId,
-			userId: user._id
-		});
+	const folder = await DriveFolders.findOne({
+		id: ps.folderId,
+		userId: user.id
+	});
 
-	if (folder === null) {
-		return rej('folder-not-found');
+	if (folder == null) {
+		throw new ApiError(meta.errors.noSuchFolder);
 	}
 
 	if (ps.name) folder.name = ps.name;
 
 	if (ps.parentId !== undefined) {
-		if (ps.parentId === null) {
+		if (ps.parentId === folder.id) {
+			throw new ApiError(meta.errors.recursiveNesting);
+		} else if (ps.parentId === null) {
 			folder.parentId = null;
 		} else {
 			// Get parent folder
-			const parent = await DriveFolder
-				.findOne({
-					_id: ps.parentId,
-					userId: user._id
-				});
+			const parent = await DriveFolders.findOne({
+				id: ps.parentId,
+				userId: user.id
+			});
 
-			if (parent === null) {
-				return rej('parent-folder-not-found');
+			if (parent == null) {
+				throw new ApiError(meta.errors.noSuchParentFolder);
 			}
 
 			// Check if the circular reference will occur
 			async function checkCircle(folderId: any): Promise<boolean> {
 				// Fetch folder
-				const folder2 = await DriveFolder.findOne({
-					_id: folderId
-				}, {
-					_id: true,
-					parentId: true
+				const folder2 = await DriveFolders.findOne({
+					id: folderId
 				});
 
-				if (folder2._id.equals(folder._id)) {
+				if (folder2!.id === folder!.id) {
 					return true;
-				} else if (folder2.parentId) {
-					return await checkCircle(folder2.parentId);
+				} else if (folder2!.parentId) {
+					return await checkCircle(folder2!.parentId);
 				} else {
 					return false;
 				}
@@ -94,28 +113,24 @@ export default define(meta, (ps, user) => new Promise(async (res, rej) => {
 
 			if (parent.parentId !== null) {
 				if (await checkCircle(parent.parentId)) {
-					return rej('detected-circular-definition');
+					throw new ApiError(meta.errors.recursiveNesting);
 				}
 			}
 
-			folder.parentId = parent._id;
+			folder.parentId = parent.id;
 		}
 	}
 
 	// Update
-	DriveFolder.update(folder._id, {
-		$set: {
-			name: folder.name,
-			parentId: folder.parentId
-		}
+	DriveFolders.update(folder.id, {
+		name: folder.name,
+		parentId: folder.parentId
 	});
 
-	// Serialize
-	const folderObj = await pack(folder);
-
-	// Response
-	res(folderObj);
+	const folderObj = await DriveFolders.pack(folder);
 
 	// Publish folderUpdated event
-	publishDriveStream(user._id, 'folderUpdated', folderObj);
-}));
+	publishDriveStream(user.id, 'folderUpdated', folderObj);
+
+	return folderObj;
+});

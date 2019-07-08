@@ -1,16 +1,21 @@
 <template>
 <div class="xqnhankfuuilcwvhgsopeqncafzsquya">
 	<button class="go-index" v-if="selfNav" @click="goIndex"><fa icon="arrow-left"/></button>
-	<header><b><router-link :to="blackUser | userPage">{{ blackUser | userName }}</router-link></b>({{ $t('@.reversi.black') }}) vs <b><router-link :to="whiteUser | userPage">{{ whiteUser | userName }}</router-link></b>({{ $t('@.reversi.white') }})</header>
+	<header><b><router-link :to="blackUser | userPage"><mk-user-name :user="blackUser"/></router-link></b>({{ $t('@.reversi.black') }}) vs <b><router-link :to="whiteUser | userPage"><mk-user-name :user="whiteUser"/></router-link></b>({{ $t('@.reversi.white') }})</header>
 
 	<div style="overflow: hidden; line-height: 28px;">
-		<p class="turn" v-if="!iAmPlayer && !game.isEnded">{{ $t('@.reversi.turn-of', { name: $options.filters.userName(turnUser) }) }}<mk-ellipsis/></p>
-		<p class="turn" v-if="logPos != logs.length">{{ $t('@.reversi.past-turn-of', { name: $options.filters.userName(turnUser) }) }}</p>
+		<p class="turn" v-if="!iAmPlayer && !game.isEnded">
+			<mfm :key="'turn:' + $options.filters.userName(turnUser)" :text="$t('@.reversi.turn-of', { name: $options.filters.userName(turnUser) })" :plain="true" :custom-emojis="turnUser.emojis"/>
+			<mk-ellipsis/>
+		</p>
+		<p class="turn" v-if="logPos != logs.length">
+			<mfm :key="'past-turn-of:' + $options.filters.userName(turnUser)" :text="$t('@.reversi.past-turn-of', { name: $options.filters.userName(turnUser) })" :plain="true" :custom-emojis="turnUser.emojis"/>
+		</p>
 		<p class="turn1" v-if="iAmPlayer && !game.isEnded && !isMyTurn">{{ $t('@.reversi.opponent-turn') }}<mk-ellipsis/></p>
 		<p class="turn2" v-if="iAmPlayer && !game.isEnded && isMyTurn" v-animate-css="{ classes: 'tada', iteration: 'infinite' }">{{ $t('@.reversi.my-turn') }}</p>
 		<p class="result" v-if="game.isEnded && logPos == logs.length">
 			<template v-if="game.winner">
-				<span>{{ $t('@.reversi.won', { name: $options.filters.userName(game.winner) }) }}</span>
+				<mfm :key="'won'" :text="$t('@.reversi.won', { name: $options.filters.userName(game.winner) })" :plain="true" :custom-emojis="game.winner.emojis"/>
 				<span v-if="game.surrendered != null"> ({{ $t('surrendered') }})</span>
 			</template>
 			<template v-else>{{ $t('@.reversi.drawn') }}</template>
@@ -18,28 +23,34 @@
 	</div>
 
 	<div class="board">
-		<div class="labels-x" v-if="this.$store.state.settings.games.reversi.showBoardLabels">
-			<span v-for="i in game.settings.map[0].length">{{ String.fromCharCode(64 + i) }}</span>
+		<div class="labels-x" v-if="$store.state.settings.gamesReversiShowBoardLabels">
+			<span v-for="i in game.map[0].length">{{ String.fromCharCode(64 + i) }}</span>
 		</div>
 		<div class="flex">
-			<div class="labels-y" v-if="this.$store.state.settings.games.reversi.showBoardLabels">
-				<div v-for="i in game.settings.map.length">{{ i }}</div>
+			<div class="labels-y" v-if="$store.state.settings.gamesReversiShowBoardLabels">
+				<div v-for="i in game.map.length">{{ i }}</div>
 			</div>
 			<div class="cells" :style="cellsStyle">
 				<div v-for="(stone, i) in o.board"
 						:class="{ empty: stone == null, none: o.map[i] == 'null', isEnded: game.isEnded, myTurn: !game.isEnded && isMyTurn, can: turnUser ? o.canPut(turnUser.id == blackUser.id, i) : null, prev: o.prevPos == i }"
 						@click="set(i)"
 						:title="`${String.fromCharCode(65 + o.transformPosToXy(i)[0])}${o.transformPosToXy(i)[1] + 1}`">
-					<img v-if="stone === true" :src="blackUser.avatarUrl" alt="black" :class="{ contrast: $store.state.settings.games.reversi.useContrastStones }">
-					<img v-if="stone === false" :src="whiteUser.avatarUrl" alt="white" :class="{ contrast: $store.state.settings.games.reversi.useContrastStones }">
+					<template v-if="$store.state.settings.gamesReversiUseAvatarStones">
+						<img v-if="stone === true" :src="blackUser.avatarUrl" alt="black">
+						<img v-if="stone === false" :src="whiteUser.avatarUrl" alt="white">
+					</template>
+					<template v-else>
+						<fa v-if="stone === true" :icon="fasCircle"/>
+						<fa v-if="stone === false" :icon="farCircle"/>
+					</template>
 				</div>
 			</div>
-			<div class="labels-y" v-if="this.$store.state.settings.games.reversi.showBoardLabels">
-				<div v-for="i in game.settings.map.length">{{ i }}</div>
+			<div class="labels-y" v-if="this.$store.state.settings.gamesReversiShowBoardLabels">
+				<div v-for="i in game.map.length">{{ i }}</div>
 			</div>
 		</div>
-		<div class="labels-x" v-if="this.$store.state.settings.games.reversi.showBoardLabels">
-			<span v-for="i in game.settings.map[0].length">{{ String.fromCharCode(64 + i) }}</span>
+		<div class="labels-x" v-if="this.$store.state.settings.gamesReversiShowBoardLabels">
+			<span v-for="i in game.map[0].length">{{ String.fromCharCode(64 + i) }}</span>
 		</div>
 	</div>
 
@@ -50,21 +61,19 @@
 	</div>
 
 	<div class="player" v-if="game.isEnded">
-		<div>
-			<button @click="logPos = 0" :disabled="logPos == 0"><fa icon="angle-double-left"/></button>
-			<button @click="logPos--" :disabled="logPos == 0"><fa icon="angle-left"/></button>
-		</div>
 		<span>{{ logPos }} / {{ logs.length }}</span>
-		<div>
-			<button @click="logPos++" :disabled="logPos == logs.length"><fa icon="angle-right"/></button>
-			<button @click="logPos = logs.length" :disabled="logPos == logs.length"><fa icon="angle-double-right"/></button>
-		</div>
+		<ui-horizon-group>
+			<ui-button @click="logPos = 0" :disabled="logPos == 0"><fa :icon="faAngleDoubleLeft"/></ui-button>
+			<ui-button @click="logPos--" :disabled="logPos == 0"><fa :icon="faAngleLeft"/></ui-button>
+			<ui-button @click="logPos++" :disabled="logPos == logs.length"><fa :icon="faAngleRight"/></ui-button>
+			<ui-button @click="logPos = logs.length" :disabled="logPos == logs.length"><fa :icon="faAngleDoubleRight"/></ui-button>
+		</ui-horizon-group>
 	</div>
 
 	<div class="info">
-		<p v-if="game.settings.isLlotheo">{{ $t('is-llotheo') }}</p>
-		<p v-if="game.settings.loopedBoard">{{ $t('looped-map') }}</p>
-		<p v-if="game.settings.canPutEverywhere">{{ $t('can-put-everywhere') }}</p>
+		<p v-if="game.isLlotheo">{{ $t('is-llotheo') }}</p>
+		<p v-if="game.loopedBoard">{{ $t('looped-map') }}</p>
+		<p v-if="game.canPutEverywhere">{{ $t('can-put-everywhere') }}</p>
 	</div>
 </div>
 </template>
@@ -75,6 +84,9 @@ import i18n from '../../../../../i18n';
 import * as CRC32 from 'crc-32';
 import Reversi, { Color } from '../../../../../../../games/reversi/core';
 import { url } from '../../../../../config';
+import { faAngleDoubleLeft, faAngleLeft, faAngleRight, faAngleDoubleRight } from '@fortawesome/free-solid-svg-icons';
+import { faCircle as fasCircle } from '@fortawesome/free-solid-svg-icons';
+import { faCircle as farCircle } from '@fortawesome/free-regular-svg-icons';
 
 export default Vue.extend({
 	i18n: i18n('common/views/components/games/reversi/reversi.game.vue'),
@@ -99,7 +111,8 @@ export default Vue.extend({
 			o: null as Reversi,
 			logs: [],
 			logPos: 0,
-			pollingClock: null
+			pollingClock: null,
+			faAngleDoubleLeft, faAngleLeft, faAngleRight, faAngleDoubleRight, fasCircle, farCircle
 		};
 	},
 
@@ -147,8 +160,8 @@ export default Vue.extend({
 
 		cellsStyle(): any {
 			return {
-				'grid-template-rows': `repeat(${this.game.settings.map.length}, 1fr)`,
-				'grid-template-columns': `repeat(${this.game.settings.map[0].length}, 1fr)`
+				'grid-template-rows': `repeat(${this.game.map.length}, 1fr)`,
+				'grid-template-columns': `repeat(${this.game.map[0].length}, 1fr)`
 			};
 		}
 	},
@@ -156,10 +169,10 @@ export default Vue.extend({
 	watch: {
 		logPos(v) {
 			if (!this.game.isEnded) return;
-			this.o = new Reversi(this.game.settings.map, {
-				isLlotheo: this.game.settings.isLlotheo,
-				canPutEverywhere: this.game.settings.canPutEverywhere,
-				loopedBoard: this.game.settings.loopedBoard
+			this.o = new Reversi(this.game.map, {
+				isLlotheo: this.game.isLlotheo,
+				canPutEverywhere: this.game.canPutEverywhere,
+				loopedBoard: this.game.loopedBoard
 			});
 			for (const log of this.logs.slice(0, v)) {
 				this.o.put(log.color, log.pos);
@@ -171,15 +184,15 @@ export default Vue.extend({
 	created() {
 		this.game = this.initGame;
 
-		this.o = new Reversi(this.game.settings.map, {
-			isLlotheo: this.game.settings.isLlotheo,
-			canPutEverywhere: this.game.settings.canPutEverywhere,
-			loopedBoard: this.game.settings.loopedBoard
+		this.o = new Reversi(this.game.map, {
+			isLlotheo: this.game.isLlotheo,
+			canPutEverywhere: this.game.canPutEverywhere,
+			loopedBoard: this.game.loopedBoard
 		});
 
-		this.game.logs.forEach(log => {
+		for (const log of this.game.logs) {
 			this.o.put(log.color, log.pos);
-		});
+		}
 
 		this.logs = this.game.logs;
 		this.logPos = this.logs.length;
@@ -187,6 +200,7 @@ export default Vue.extend({
 		// 通信を取りこぼしてもいいように定期的にポーリングさせる
 		if (this.game.isStarted && !this.game.isEnded) {
 			this.pollingClock = setInterval(() => {
+				if (this.game.isEnded) return;
 				const crc32 = CRC32.str(this.logs.map(x => x.pos.toString()).join(''));
 				this.connection.send('check', {
 					crc32: crc32
@@ -273,15 +287,15 @@ export default Vue.extend({
 		onRescue(game) {
 			this.game = game;
 
-			this.o = new Reversi(this.game.settings.map, {
-				isLlotheo: this.game.settings.isLlotheo,
-				canPutEverywhere: this.game.settings.canPutEverywhere,
-				loopedBoard: this.game.settings.loopedBoard
+			this.o = new Reversi(this.game.map, {
+				isLlotheo: this.game.isLlotheo,
+				canPutEverywhere: this.game.canPutEverywhere,
+				loopedBoard: this.game.loopedBoard
 			});
 
-			this.game.logs.forEach(log => {
+			for (const log of this.game.logs) {
 				this.o.put(log.color, log.pos, true);
-			});
+			}
 
 			this.logs = this.game.logs;
 			this.logPos = this.logs.length;
@@ -412,17 +426,15 @@ export default Vue.extend({
 					&.none
 						border-color transparent !important
 
-					> img
+					> svg
 						display block
 						width 100%
 						height 100%
 
-						&.contrast
-							&[alt="black"]
-								filter brightness(.5)
-
-							&[alt="white"]
-								filter brightness(2)
+					> img
+						display block
+						width 100%
+						height 100%
 
 	> .graph
 		display grid
@@ -449,7 +461,9 @@ export default Vue.extend({
 		padding-bottom 16px
 
 	> .player
-		padding-bottom 32px
+		padding 0 16px 32px 16px
+		margin 0 auto
+		max-width 500px
 
 		> span
 			display inline-block

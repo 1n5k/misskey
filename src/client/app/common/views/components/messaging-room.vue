@@ -4,14 +4,14 @@
 	@drop.prevent.stop="onDrop"
 >
 	<div class="body">
-		<p class="init" v-if="init"><fa icon="spinner .spin"/>{{ $t('@.loading') }}</p>
-		<p class="empty" v-if="!init && messages.length == 0"><fa icon="info-circle"/>{{ $t('empty') }}</p>
-		<p class="no-history" v-if="!init && messages.length > 0 && !existMoreMessages"><fa icon="flag"/>{{ $t('no-history') }}</p>
+		<p class="init" v-if="init"><fa icon="spinner" pulse fixed-width/>{{ $t('@.loading') }}</p>
+		<p class="empty" v-if="!init && messages.length == 0"><fa icon="info-circle"/>{{ user ? $t('not-talked-user') : $t('not-talked-group') }}</p>
+		<p class="no-history" v-if="!init && messages.length > 0 && !existMoreMessages"><fa :icon="faFlag"/>{{ $t('no-history') }}</p>
 		<button class="more" :class="{ fetching: fetchingMoreMessages }" v-if="existMoreMessages" @click="fetchMoreMessages" :disabled="fetchingMoreMessages">
-			<template v-if="fetchingMoreMessages"><fa icon="spinner .pulse" fixed-width/></template>{{ fetchingMoreMessages ? $t('@.loading') : $t('@.load-more') }}
+			<template v-if="fetchingMoreMessages"><fa icon="spinner" pulse fixed-width/></template>{{ fetchingMoreMessages ? $t('@.loading') : $t('@.load-more') }}
 		</button>
 		<template v-for="(message, i) in _messages">
-			<x-message :message="message" :key="message.id"/>
+			<x-message :message="message" :key="message.id" :is-group="group != null"/>
 			<p class="date" v-if="i != messages.length - 1 && message._date != _messages[i + 1]._date">
 				<span>{{ _messages[i + 1]._datetext }}</span>
 			</p>
@@ -20,10 +20,10 @@
 	<footer>
 		<transition name="fade">
 			<div class="new-message" v-show="showIndicator">
-				<button @click="onIndicatorClick"><i><fa icon="arrow-circle-down"/></i>{{ $t('new-message') }}</button>
+				<button @click="onIndicatorClick"><i><fa :icon="faArrowCircleDown"/></i>{{ $t('new-message') }}</button>
 			</div>
 		</transition>
-		<x-form :user="user" ref="form"/>
+		<x-form :user="user" :group="group" ref="form"/>
 	</footer>
 </div>
 </template>
@@ -34,15 +34,30 @@ import i18n from '../../../i18n';
 import XMessage from './messaging-room.message.vue';
 import XForm from './messaging-room.form.vue';
 import { url } from '../../../config';
+import { faArrowCircleDown, faFlag } from '@fortawesome/free-solid-svg-icons';
 
 export default Vue.extend({
 	i18n: i18n('common/views/components/messaging-room.vue'),
+
 	components: {
 		XMessage,
 		XForm
 	},
 
-	props: ['user', 'isNaked'],
+	props: {
+		user: {
+			type: Object,
+			requird: false,
+		},
+		group: {
+			type: Object,
+			requird: false,
+		},
+		isNaked: {
+			type: Boolean,
+			requird: false,
+		},
+	},
 
 	data() {
 		return {
@@ -52,7 +67,8 @@ export default Vue.extend({
 			existMoreMessages: false,
 			connection: null,
 			showIndicator: false,
-			timer: null
+			timer: null,
+			faArrowCircleDown, faFlag
 		};
 	},
 
@@ -73,10 +89,14 @@ export default Vue.extend({
 	},
 
 	mounted() {
-		this.connection = this.$root.stream.connectToChannel('messaging', { otherparty: this.user.id });
+		this.connection = this.$root.stream.connectToChannel('messaging', {
+			otherparty: this.user ? this.user.id : undefined,
+			group: this.group ? this.group.id : undefined,
+		});
 
 		this.connection.on('message', this.onMessage);
 		this.connection.on('read', this.onRead);
+		this.connection.on('deleted', this.onDeleted);
 
 		if (this.isNaked) {
 			window.addEventListener('scroll', this.onScroll, { passive: true });
@@ -122,7 +142,10 @@ export default Vue.extend({
 				this.form.upload(e.dataTransfer.files[0]);
 				return;
 			} else if (e.dataTransfer.files.length > 1) {
-				alert(this.$t('only-one-file-attached'));
+				this.$root.dialog({
+					type: 'error',
+					text: this.$t('only-one-file-attached')
+				});
 				return;
 			}
 
@@ -140,7 +163,8 @@ export default Vue.extend({
 				const max = this.existMoreMessages ? 20 : 10;
 
 				this.$root.api('messaging/messages', {
-					userId: this.user.id,
+					userId: this.user ? this.user.id : undefined,
+					groupId: this.group ? this.group.id : undefined,
 					limit: max + 1,
 					untilId: this.existMoreMessages ? this.messages[0].id : undefined
 				}).then(messages => {
@@ -192,14 +216,30 @@ export default Vue.extend({
 			}
 		},
 
-		onRead(ids) {
-			if (!Array.isArray(ids)) ids = [ids];
-			ids.forEach(id => {
-				if (this.messages.some(x => x.id == id)) {
-					const exist = this.messages.map(x => x.id).indexOf(id);
-					this.messages[exist].isRead = true;
+		onRead(x) {
+			if (this.user) {
+				if (!Array.isArray(x)) x = [x];
+				for (const id of x) {
+					if (this.messages.some(x => x.id == id)) {
+						const exist = this.messages.map(x => x.id).indexOf(id);
+						this.messages[exist].isRead = true;
+					}
 				}
-			});
+			} else if (this.group) {
+				for (const id of x.ids) {
+					if (this.messages.some(x => x.id == id)) {
+						const exist = this.messages.map(x => x.id).indexOf(id);
+						this.messages[exist].reads.push(x.userId);
+					}
+				}
+			}
+		},
+
+		onDeleted(id) {
+			const msg = this.messages.find(m => m.id === id);
+			if (msg) {
+				this.messages = this.messages.filter(m => m.id !== msg.id);
+			}
 		},
 
 		isBottom() {
@@ -246,13 +286,13 @@ export default Vue.extend({
 
 		onVisibilitychange() {
 			if (document.hidden) return;
-			this.messages.forEach(message => {
+			for (const message of this.messages) {
 				if (message.userId !== this.$store.state.i.id && !message.isRead) {
 					this.connection.send('read', {
 						id: message.id
 					});
 				}
-			});
+			}
 		}
 	}
 });
@@ -260,17 +300,13 @@ export default Vue.extend({
 
 <style lang="stylus" scoped>
 .mk-messaging-room
-	display flex
-	flex 1
-	flex-direction column
-	height 100%
 	background var(--messagingRoomBg)
 
 	> .body
 		width 100%
 		max-width 600px
 		margin 0 auto
-		flex 1
+		min-height calc(100% - 103px)
 
 		> .init,
 		> .empty

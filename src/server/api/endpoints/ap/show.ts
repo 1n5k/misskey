@@ -1,14 +1,20 @@
 import $ from 'cafy';
 import define from '../../define';
 import config from '../../../../config';
-import * as mongo from 'mongodb';
-import User, { pack as packUser, IUser } from '../../../../models/user';
 import { createPerson } from '../../../../remote/activitypub/models/person';
-import Note, { pack as packNote, INote } from '../../../../models/note';
 import { createNote } from '../../../../remote/activitypub/models/note';
 import Resolver from '../../../../remote/activitypub/resolver';
+import { ApiError } from '../../error';
+import { extractDbHost } from '../../../../misc/convert-host';
+import { Users, Notes } from '../../../../models';
+import { Note } from '../../../../models/entities/note';
+import { User } from '../../../../models/entities/user';
+import { fetchMeta } from '../../../../misc/fetch-meta';
+import { validActor, validPost } from '../../../../remote/activitypub/type';
 
 export const meta = {
+	tags: ['federation'],
+
 	desc: {
 		'ja-JP': 'URIを指定してActivityPubオブジェクトを参照します。'
 	},
@@ -23,14 +29,24 @@ export const meta = {
 			}
 		},
 	},
+
+	errors: {
+		noSuchObject: {
+			message: 'No such object.',
+			code: 'NO_SUCH_OBJECT',
+			id: 'dc94d745-1262-4e63-a17d-fecaa57efc82'
+		}
+	}
 };
 
-export default define(meta, (ps) => new Promise(async (res, rej) => {
+export default define(meta, async (ps) => {
 	const object = await fetchAny(ps.uri);
-	if (object == null) return rej('object not found');
-
-	res(object);
-}));
+	if (object) {
+		return object;
+	} else {
+		throw new ApiError(meta.errors.noSuchObject);
+	}
+});
 
 /***
  * URIからUserかNoteを解決する
@@ -38,21 +54,40 @@ export default define(meta, (ps) => new Promise(async (res, rej) => {
 async function fetchAny(uri: string) {
 	// URIがこのサーバーを指しているなら、ローカルユーザーIDとしてDBからフェッチ
 	if (uri.startsWith(config.url + '/')) {
-		const id = new mongo.ObjectID(uri.split('/').pop());
-		const [user, note] = await Promise.all([
-			User.findOne({ _id: id }),
-			Note.findOne({ _id: id })
-		]);
+		const parts = uri.split('/');
+		const id = parts.pop();
+		const type = parts.pop();
 
-		const packed = await mergePack(user, note);
-		if (packed !== null) return packed;
+		if (type === 'notes') {
+			const note = await Notes.findOne(id);
+
+			if (note) {
+				return {
+					type: 'Note',
+					object: await Notes.pack(note, null, { detail: true })
+				};
+			}
+		} else if (type === 'users') {
+			const user = await Users.findOne(id);
+
+			if (user) {
+				return {
+					type: 'User',
+					object: await Users.pack(user, null, { detail: true })
+				};
+			}
+		}
 	}
+
+	// ブロックしてたら中断
+	const meta = await fetchMeta();
+	if (meta.blockedHosts.includes(extractDbHost(uri))) return null;
 
 	// URI(AP Object id)としてDB検索
 	{
 		const [user, note] = await Promise.all([
-			User.findOne({ uri: uri }),
-			Note.findOne({ uri: uri })
+			Users.findOne({ uri: uri }),
+			Notes.findOne({ uri: uri })
 		]);
 
 		const packed = await mergePack(user, note);
@@ -66,9 +101,35 @@ async function fetchAny(uri: string) {
 	// /@user のような正規id以外で取得できるURIが指定されていた場合、ここで初めて正規URIが確定する
 	// これはDBに存在する可能性があるため再度DB検索
 	if (uri !== object.id) {
+		if (object.id.startsWith(config.url + '/')) {
+			const parts = object.id.split('/');
+			const id = parts.pop();
+			const type = parts.pop();
+
+			if (type === 'notes') {
+				const note = await Notes.findOne(id);
+
+				if (note) {
+					return {
+						type: 'Note',
+						object: await Notes.pack(note, null, { detail: true })
+					};
+				}
+			} else if (type === 'users') {
+				const user = await Users.findOne(id);
+
+				if (user) {
+					return {
+						type: 'User',
+						object: await Users.pack(user, null, { detail: true })
+					};
+				}
+			}
+		}
+
 		const [user, note] = await Promise.all([
-			User.findOne({ uri: object.id }),
-			Note.findOne({ uri: object.id })
+			Users.findOne({ uri: object.id }),
+			Notes.findOne({ uri: object.id })
 		]);
 
 		const packed = await mergePack(user, note);
@@ -76,37 +137,37 @@ async function fetchAny(uri: string) {
 	}
 
 	// それでもみつからなければ新規であるため登録
-	if (object.type === 'Person') {
+	if (validActor.includes(object.type)) {
 		const user = await createPerson(object.id);
 		return {
 			type: 'User',
-			object: user
+			object: await Users.pack(user, null, { detail: true })
 		};
 	}
 
-	if (object.type === 'Note') {
-		const note = await createNote(object.id);
+	if (validPost.includes(object.type)) {
+		const note = await createNote(object.id, undefined, true);
 		return {
 			type: 'Note',
-			object: note
+			object: await Notes.pack(note!, null, { detail: true })
 		};
 	}
 
 	return null;
 }
 
-async function mergePack(user: IUser, note: INote) {
-	if (user !== null) {
+async function mergePack(user: User | null | undefined, note: Note | null | undefined) {
+	if (user != null) {
 		return {
 			type: 'User',
-			object: await packUser(user, null, { detail: true })
+			object: await Users.pack(user, null, { detail: true })
 		};
 	}
 
-	if (note !== null) {
+	if (note != null) {
 		return {
 			type: 'Note',
-			object: await packNote(note, null, { detail: true })
+			object: await Notes.pack(note, null, { detail: true })
 		};
 	}
 

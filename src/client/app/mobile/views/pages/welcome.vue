@@ -3,15 +3,15 @@
 	<div class="banner" :style="{ backgroundImage: banner ? `url(${banner})` : null }"></div>
 
 	<div>
-		<img svg-inline src="../../../../assets/title.svg" :alt="name">
+		<img svg-inline src="../../../../assets/title.svg" alt="Misskey">
 		<p class="host">{{ host }}</p>
 		<div class="about">
-			<h2>{{ name }}</h2>
+			<h2>{{ name || 'Misskey' }}</h2>
 			<p v-html="description || this.$t('@.about')"></p>
-			<router-link class="signup" to="/signup">{{ $t('signup') }}</router-link>
+			<router-link class="signup" to="/signup">{{ $t('@.signup') }}</router-link>
 		</div>
-		<div class="login">
-			<mk-signin :with-avatar="false"/>
+		<div class="signin">
+			<a href="/signin" @click.prevent="signin()">{{ $t('@.signin') }}</a>
 		</div>
 		<div class="tl">
 			<mk-welcome-timeline/>
@@ -29,7 +29,8 @@
 		<div class="announcements" v-if="announcements && announcements.length > 0">
 			<article v-for="announcement in announcements">
 				<span class="title" v-html="announcement.title"></span>
-				<div v-html="announcement.text"></div>
+				<mfm :text="announcement.text"/>
+				<img v-if="announcement.image" :src="announcement.image" alt="" style="display: block; max-height: 120px; max-width: 100%;"/>
 			</article>
 		</div>
 		<article class="about-misskey">
@@ -62,7 +63,7 @@
 		</article>
 		<div class="info" v-if="meta">
 			<p>Version: <b>{{ meta.version }}</b></p>
-			<p>Maintainer: <b><a :href="'mailto:' + meta.maintainer.email" target="_blank">{{ meta.maintainer.name }}</a></b></p>
+			<p>Maintainer: <b><a :href="'mailto:' + meta.maintainerEmail" target="_blank">{{ meta.maintainerName }}</a></b></p>
 		</div>
 		<footer>
 			<small>{{ copyright }}</small>
@@ -76,6 +77,7 @@ import Vue from 'vue';
 import i18n from '../../../i18n';
 import { copyright, host } from '../../../config';
 import { concat } from '../../../../../prelude/array';
+import { toUnicode } from 'punycode';
 
 export default Vue.extend({
 	i18n: i18n('mobile/views/pages/welcome.vue'),
@@ -85,8 +87,8 @@ export default Vue.extend({
 			copyright,
 			stats: null,
 			banner: null,
-			host,
-			name: 'Misskey',
+			host: toUnicode(host),
+			name: null,
 			description: '',
 			photos: [],
 			announcements: []
@@ -97,7 +99,7 @@ export default Vue.extend({
 			this.meta = meta;
 			this.name = meta.name;
 			this.description = meta.description;
-			this.announcements = meta.broadcasts;
+			this.announcements = meta.announcements;
 			this.banner = meta.bannerUrl;
 		});
 
@@ -108,7 +110,9 @@ export default Vue.extend({
 		const image = [
 			'image/jpeg',
 			'image/png',
-			'image/gif'
+			'image/gif',
+			'image/apng',
+			'image/vnd.mozilla.apng',
 		];
 
 		this.$root.api('notes/local-timeline', {
@@ -119,6 +123,13 @@ export default Vue.extend({
 			const files = concat(notes.map((n: any): any[] => n.files));
 			this.photos = files.filter(f => image.includes(f.type)).slice(0, 6);
 		});
+	},
+	methods: {
+		signin() {
+			this.$root.dialog({
+				type: 'signin'
+			});
+		}
 	}
 });
 </script>
@@ -184,31 +195,8 @@ export default Vue.extend({
 			> .signup
 				font-weight bold
 
-		> .login
+		> .signin
 			margin 16px 0
-
-			> form
-
-				button
-					display block
-					width 100%
-					padding 10px
-					margin 0
-					color #333
-					font-size 1em
-					text-align center
-					text-decoration none
-					text-shadow 0 1px 0 rgba(255, 255, 255, 0.9)
-					background-image linear-gradient(#fafafa, #eaeaea)
-					border 1px solid #ddd
-					border-bottom-color #cecece
-					border-radius 4px
-
-					&:active
-						background-color #767676
-						background-image none
-						border-color #444
-						box-shadow 0 1px 3px rgba(#000, 0.075), inset 0 0 5px rgba(#000, 0.2)
 
 		> .tl
 			margin 16px 0
@@ -305,6 +293,7 @@ export default Vue.extend({
 			padding 16px 0
 			border solid 2px rgba(0, 0, 0, 0.1)
 			border-radius 8px
+			color var(--text)
 
 			> *
 				margin 0 16px

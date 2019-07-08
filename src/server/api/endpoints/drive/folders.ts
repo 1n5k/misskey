@@ -1,6 +1,8 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../misc/cafy-id';
-import DriveFolder, { pack } from '../../../../models/drive-folder';
+import $ from 'cafy';
+import { ID } from '../../../../misc/cafy-id';
 import define from '../../define';
+import { DriveFolders } from '../../../../models';
+import { makePaginationQuery } from '../../common/make-pagination-query';
 
 export const meta = {
 	desc: {
@@ -8,63 +10,54 @@ export const meta = {
 		'en-US': 'Get folders of drive.'
 	},
 
+	tags: ['drive'],
+
 	requireCredential: true,
 
-	kind: 'drive-read',
+	kind: 'read:drive',
 
 	params: {
 		limit: {
-			validator: $.num.optional.range(1, 100),
+			validator: $.optional.num.range(1, 100),
 			default: 10
 		},
 
 		sinceId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		untilId: {
-			validator: $.type(ID).optional,
-			transform: transform,
+			validator: $.optional.type(ID),
 		},
 
 		folderId: {
-			validator: $.type(ID).optional.nullable,
+			validator: $.optional.nullable.type(ID),
 			default: null as any,
-			transform: transform,
 		}
-	}
+	},
+
+	res: {
+		type: 'array' as const,
+		optional: false as const, nullable: false as const,
+		items: {
+			type: 'object' as const,
+			optional: false as const, nullable: false as const,
+			ref: 'DriveFolder',
+		}
+	},
 };
 
-export default define(meta, (ps, user) => new Promise(async (res, rej) => {
-	// Check if both of sinceId and untilId is specified
-	if (ps.sinceId && ps.untilId) {
-		return rej('cannot set sinceId and untilId');
+export default define(meta, async (ps, user) => {
+	const query = makePaginationQuery(DriveFolders.createQueryBuilder('folder'), ps.sinceId, ps.untilId)
+		.andWhere('folder.userId = :userId', { userId: user.id });
+
+	if (ps.folderId) {
+		query.andWhere('folder.parentId = :parentId', { parentId: ps.folderId });
+	} else {
+		query.andWhere('folder.parentId IS NULL');
 	}
 
-	const sort = {
-		_id: -1
-	};
-	const query = {
-		userId: user._id,
-		parentId: ps.folderId
-	} as any;
-	if (ps.sinceId) {
-		sort._id = 1;
-		query._id = {
-			$gt: ps.sinceId
-		};
-	} else if (ps.untilId) {
-		query._id = {
-			$lt: ps.untilId
-		};
-	}
+	const folders = await query.take(ps.limit!).getMany();
 
-	const folders = await DriveFolder
-		.find(query, {
-			limit: ps.limit,
-			sort: sort
-		});
-
-	res(await Promise.all(folders.map(folder => pack(folder))));
-}));
+	return await Promise.all(folders.map(folder => DriveFolders.pack(folder)));
+});

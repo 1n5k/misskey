@@ -1,16 +1,15 @@
-import * as debug from 'debug';
-
 import Resolver from '../../resolver';
-import { IRemoteUser } from '../../../../models/user';
+import { IRemoteUser } from '../../../../models/entities/user';
 import announceNote from './note';
-import { IAnnounce, INote } from '../../type';
+import { IAnnounce, INote, validPost, getApId } from '../../type';
+import { apLogger } from '../../logger';
 
-const log = debug('misskey:activitypub');
+const logger = apLogger;
 
 export default async (actor: IRemoteUser, activity: IAnnounce): Promise<void> => {
-	const uri = activity.id || activity;
+	const uri = getApId(activity);
 
-	log(`Announce: ${uri}`);
+	logger.info(`Announce: ${uri}`);
 
 	const resolver = new Resolver();
 
@@ -19,17 +18,13 @@ export default async (actor: IRemoteUser, activity: IAnnounce): Promise<void> =>
 	try {
 		object = await resolver.resolve(activity.object);
 	} catch (e) {
-		log(`Resolution failed: ${e}`);
+		logger.error(`Resolution failed: ${e}`);
 		throw e;
 	}
 
-	switch (object.type) {
-	case 'Note':
+	if (validPost.includes(object.type)) {
 		announceNote(resolver, actor, activity, object as INote);
-		break;
-
-	default:
-		console.warn(`Unknown announce type: ${object.type}`);
-		break;
+	} else {
+		logger.warn(`Unknown announce type: ${object.type}`);
 	}
 };

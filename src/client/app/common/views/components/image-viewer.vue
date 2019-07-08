@@ -7,7 +7,7 @@
 
 <script lang="ts">
 import Vue from 'vue';
-import * as anime from 'animejs';
+import anime from 'animejs';
 
 export default Vue.extend({
 	props: ['image'],
@@ -65,5 +65,6 @@ export default Vue.extend({
 		max-height 100%
 		margin auto
 		cursor zoom-out
+		image-orientation from-image
 
 </style>

@@ -1,12 +1,12 @@
 <template>
-<div class="yohlumlkhizgfkvvscwfcrcggkotpvry" :class="{ smart: $store.state.device.postStyle == 'smart' }">
-	<mk-avatar class="avatar" :user="note.user" v-if="$store.state.device.postStyle != 'smart'"/>
+<div class="yohlumlkhizgfkvvscwfcrcggkotpvry" :class="{ smart: $store.state.device.postStyle == 'smart', mini: narrow }">
+	<mk-avatar class="avatar" :user="note.user" v-if="$store.state.device.postStyle != 'smart' && !narrow"/>
 	<div class="main">
 		<mk-note-header class="header" :note="note" :mini="true"/>
 		<div class="body">
 			<p v-if="note.cw != null" class="cw">
 				<span class="text" v-if="note.cw != ''">{{ note.cw }}</span>
-				<mk-cw-button v-model="showContent"/>
+				<mk-cw-button v-model="showContent" :note="note"/>
 			</p>
 			<div class="content" v-show="note.cw == null || showContent">
 				<mk-sub-note-content class="text" :note="note"/>
@@ -27,6 +27,12 @@ export default Vue.extend({
 		}
 	},
 
+	inject: {
+		narrow: {
+			default: false
+		}
+	},
+
 	data() {
 		return {
 			showContent: false
@@ -40,13 +46,28 @@ export default Vue.extend({
 	display flex
 	margin 0
 	padding 0
+	overflow hidden
 	font-size 10px
 
-	@media (min-width 350px)
-		font-size 12px
+	&:not(.mini)
 
-	@media (min-width 500px)
-		font-size 14px
+		@media (min-width 350px)
+			font-size 12px
+
+		@media (min-width 500px)
+			font-size 14px
+
+		> .avatar
+
+			@media (min-width 350px)
+				margin 0 10px 0 0
+				width 44px
+				height 44px
+
+			@media (min-width 500px)
+				margin 0 12px 0 0
+				width 48px
+				height 48px
 
 	&.smart
 		> .main
@@ -62,16 +83,6 @@ export default Vue.extend({
 		width 40px
 		height 40px
 		border-radius 8px
-
-		@media (min-width 350px)
-			margin 0 10px 0 0
-			width 44px
-			height 44px
-
-		@media (min-width 500px)
-			margin 0 12px 0 0
-			width 48px
-			height 48px
 
 	> .main
 		flex 1

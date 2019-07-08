@@ -87,12 +87,12 @@ export default async (job: bq.Job, done: any): Promise<void> => {
 		return;
 	}
 
-	//if (!httpSignature.verifySignature(signature, user.publicKey.publicKeyPem)) {
+	if (!httpSignature.verifySignature(signature, user.publicKey.publicKeyPem)) {
 
-	//	console.warn('signature verification failed');
-	//	done();
-	//	return;
-	//}
+		console.warn('signature verification failed');
+		done();
+		return;
+	}
 	
 	//#region Log
 	publishApLogStream({

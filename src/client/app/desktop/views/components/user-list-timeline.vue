@@ -1,22 +1,33 @@
 <template>
 <div>
-	<mk-notes ref="timeline" :more="existMore ? more : null"/>
+	<mk-notes ref="timeline" :pagination="pagination" @inited="() => $emit('loaded')">
+		<template #header>
+			<slot></slot>
+		</template>
+	</mk-notes>
 </div>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
 
-const fetchLimit = 10;
-
 export default Vue.extend({
 	props: ['list'],
 	data() {
 		return {
-			fetching: true,
-			moreFetching: false,
-			existMore: false,
-			connection: null
+			connection: null,
+			date: null,
+			pagination: {
+				endpoint: 'notes/user-list-timeline',
+				limit: 10,
+				params: init => ({
+					listId: this.list.id,
+					untilDate: init ? undefined : (this.date ? this.date.getTime() : undefined),
+					includeMyRenotes: this.$store.state.settings.showMyRenotes,
+					includeRenotedMyNotes: this.$store.state.settings.showRenotedMyNotes,
+					includeLocalRenotes: this.$store.state.settings.showLocalRenotes
+				})
+			}
 		};
 	},
 	watch: {
@@ -24,6 +35,10 @@ export default Vue.extend({
 	},
 	mounted() {
 		this.init();
+		this.$root.$on('warp', this.warp);
+		this.$once('hook:beforeDestroy', () => {
+			this.$root.$off('warp', this.warp);
+		});
 	},
 	beforeDestroy() {
 		this.connection.dispose();
@@ -37,63 +52,19 @@ export default Vue.extend({
 			this.connection.on('note', this.onNote);
 			this.connection.on('userAdded', this.onUserAdded);
 			this.connection.on('userRemoved', this.onUserRemoved);
-
-			this.fetch();
-		},
-		fetch() {
-			this.fetching = true;
-
-			(this.$refs.timeline as any).init(() => new Promise((res, rej) => {
-				this.$root.api('notes/user-list-timeline', {
-					listId: this.list.id,
-					limit: fetchLimit + 1,
-					includeMyRenotes: this.$store.state.settings.showMyRenotes,
-					includeRenotedMyNotes: this.$store.state.settings.showRenotedMyNotes,
-					includeLocalRenotes: this.$store.state.settings.showLocalRenotes
-				}).then(notes => {
-					if (notes.length == fetchLimit + 1) {
-						notes.pop();
-						this.existMore = true;
-					}
-					res(notes);
-					this.fetching = false;
-					this.$emit('loaded');
-				}, rej);
-			}));
-		},
-		more() {
-			this.moreFetching = true;
-
-			const promise = this.$root.api('notes/user-list-timeline', {
-				listId: this.list.id,
-				limit: fetchLimit + 1,
-				untilId: (this.$refs.timeline as any).tail().id,
-				includeMyRenotes: this.$store.state.settings.showMyRenotes,
-				includeRenotedMyNotes: this.$store.state.settings.showRenotedMyNotes,
-				includeLocalRenotes: this.$store.state.settings.showLocalRenotes
-			});
-
-			promise.then(notes => {
-				if (notes.length == fetchLimit + 1) {
-					notes.pop();
-				} else {
-					this.existMore = false;
-				}
-				notes.forEach(n => (this.$refs.timeline as any).append(n));
-				this.moreFetching = false;
-			});
-
-			return promise;
 		},
 		onNote(note) {
-			// Prepend a note
 			(this.$refs.timeline as any).prepend(note);
 		},
 		onUserAdded() {
-			this.fetch();
+			(this.$refs.timeline as any).reload();
 		},
 		onUserRemoved() {
-			this.fetch();
+			(this.$refs.timeline as any).reload();
+		},
+		warp(date) {
+			this.date = date;
+			(this.$refs.timeline as any).reload();
 		}
 	}
 });

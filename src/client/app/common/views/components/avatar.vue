@@ -1,20 +1,21 @@
 <template>
-	<span class="mk-avatar" :style="style" :class="{ cat }" :title="user | acct" v-if="disableLink && !disablePreview" v-user-preview="user.id" @click="onClick">
+	<span class="mk-avatar" :style="style" :class="{ cat }" :title="user | acct" v-if="disableLink && !disablePreview" v-user-preview="user.id" @click="onClick" v-once>
 		<span class="inner" :style="icon"></span>
 	</span>
-	<span class="mk-avatar" :style="style" :class="{ cat }" :title="user | acct" v-else-if="disableLink && disablePreview" @click="onClick">
+	<span class="mk-avatar" :style="style" :class="{ cat }" :title="user | acct" v-else-if="disableLink && disablePreview" @click="onClick" v-once>
 		<span class="inner" :style="icon"></span>
 	</span>
-	<router-link class="mk-avatar" :style="style" :class="{ cat }" :to="user | userPage" :title="user | acct" :target="target" v-else-if="!disableLink && !disablePreview" v-user-preview="user.id">
+	<router-link class="mk-avatar" :style="style" :class="{ cat }" :to="user | userPage" :title="user | acct" :target="target" v-else-if="!disableLink && !disablePreview" v-user-preview="user.id" v-once>
 		<span class="inner" :style="icon"></span>
 	</router-link>
-	<router-link class="mk-avatar" :style="style" :class="{ cat }" :to="user | userPage" :title="user | acct" :target="target" v-else-if="!disableLink && disablePreview">
+	<router-link class="mk-avatar" :style="style" :class="{ cat }" :to="user | userPage" :title="user | acct" :target="target" v-else-if="!disableLink && disablePreview" v-once>
 		<span class="inner" :style="icon"></span>
 	</router-link>
 </template>
 
 <script lang="ts">
 import Vue from 'vue';
+import { getStaticImageUrl } from '../../../common/scripts/get-static-image-url';
 
 export default Vue.extend({
 	props: {
@@ -47,21 +48,22 @@ export default Vue.extend({
 				borderRadius: this.$store.state.settings.circleIcons ? '100%' : null
 			};
 		},
+		url(): string {
+			return this.$store.state.device.disableShowingAnimatedImages
+				? getStaticImageUrl(this.user.avatarUrl)
+				: this.user.avatarUrl;
+		},
 		icon(): any {
 			return {
-				backgroundColor: this.lightmode
-					? `rgb(${this.user.avatarColor.slice(0, 3).join(',')})`
-					: this.user.avatarColor && this.user.avatarColor.length == 3
-						? `rgb(${this.user.avatarColor.join(',')})`
-						: null,
-				backgroundImage: this.lightmode ? null : `url(${this.user.avatarUrl})`,
+				backgroundColor: this.user.avatarColor,
+				backgroundImage: this.lightmode ? null : `url(${this.url})`,
 				borderRadius: this.$store.state.settings.circleIcons ? '100%' : null
 			};
 		}
 	},
 	mounted() {
 		if (this.user.avatarColor) {
-			this.$el.style.color = `rgb(${this.user.avatarColor.slice(0, 3).join(',')})`;
+			this.$el.style.color = this.user.avatarColor;
 		}
 	},
 	methods: {
@@ -76,6 +78,7 @@ export default Vue.extend({
 .mk-avatar
 	display inline-block
 	vertical-align bottom
+	flex-shrink 0
 
 	&:not(.cat)
 		overflow hidden

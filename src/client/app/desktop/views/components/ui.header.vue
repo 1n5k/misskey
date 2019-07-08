@@ -1,6 +1,6 @@
 <template>
 <div class="header" :style="style">
-	<p class="warn" v-if="env != 'production'">{{ $t('@.do-not-use-in-production') }}</p>
+	<p class="warn" v-if="env != 'production'">{{ $t('@.do-not-use-in-production') }} <a href="/assets/flush.html?force">Flush</a></p>
 	<div class="main" ref="main">
 		<div class="backdrop"></div>
 		<div class="main">
@@ -16,9 +16,10 @@
 				<div class="right">
 					<x-search/>
 					<x-account v-if="$store.getters.isSignedIn"/>
+					<x-messaging v-if="$store.getters.isSignedIn"/>
 					<x-notifications v-if="$store.getters.isSignedIn"/>
 					<x-post v-if="$store.getters.isSignedIn"/>
-					<x-clock v-if="$store.state.settings.showClockOnHeader"/>
+					<x-clock v-if="$store.state.settings.showClockOnHeader" class="clock"/>
 				</div>
 			</div>
 		</div>
@@ -29,7 +30,6 @@
 <script lang="ts">
 import Vue from 'vue';
 import i18n from '../../../i18n';
-import * as anime from 'animejs';
 import { env } from '../../../config';
 
 import XNav from './ui.header.nav.vue';
@@ -38,6 +38,7 @@ import XAccount from './ui.header.account.vue';
 import XNotifications from './ui.header.notifications.vue';
 import XPost from './ui.header.post.vue';
 import XClock from './ui.header.clock.vue';
+import XMessaging from './ui.header.messaging.vue';
 
 export default Vue.extend({
 	i18n: i18n(),
@@ -46,6 +47,7 @@ export default Vue.extend({
 		XSearch,
 		XAccount,
 		XNotifications,
+		XMessaging,
 		XPost,
 		XClock
 	},
@@ -59,7 +61,7 @@ export default Vue.extend({
 	computed: {
 		style(): any {
 			return {
-				'box-shadow': this.$store.state.settings.useShadow ? '0 0px 8px rgba(0, 0, 0, 0.2)' : 'none'
+				'box-shadow': this.$store.state.device.useShadow ? '0 0px 8px rgba(0, 0, 0, 0.2)' : 'none'
 			};
 		}
 	},
@@ -117,7 +119,7 @@ export default Vue.extend({
 			> .container
 				display flex
 				width 100%
-				max-width 1300px
+				max-width 1208px
 				margin 0 auto
 
 				> *
@@ -153,7 +155,7 @@ export default Vue.extend({
 						vertical-align top
 
 					@media (max-width 1100px)
-						> .mk-ui-header-search
+						> .clock
 							display none
 
 </style>

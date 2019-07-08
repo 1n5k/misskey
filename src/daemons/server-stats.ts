@@ -3,7 +3,7 @@ import * as sysUtils from 'systeminformation';
 import * as diskusage from 'diskusage';
 import * as Deque from 'double-ended-queue';
 import Xev from 'xev';
-const osUtils = require('os-utils');
+import * as osUtils from 'os-utils';
 
 const ev = new Xev();
 
@@ -23,7 +23,7 @@ export default function() {
 		const cpu = await cpuUsage();
 		const usedmem = await usedMem();
 		const totalmem = await totalMem();
-		const disk = diskusage.checkSync(os.platform() == 'win32' ? 'c:' : '/');
+		const disk = await diskusage.check(os.platform() == 'win32' ? 'c:' : '/');
 
 		const stats = {
 			cpu_usage: cpu,
@@ -56,22 +56,12 @@ function cpuUsage() {
 
 // MEMORY(excl buffer + cache) STAT
 async function usedMem() {
-	try {
-		const data = await sysUtils.mem();
-		return data.active;
-	} catch (error) {
-		console.error(error);
-		throw error;
-	}
+	const data = await sysUtils.mem();
+	return data.active;
 }
 
 // TOTAL MEMORY STAT
 async function totalMem() {
-	try {
-		const data = await sysUtils.mem();
-		return data.total;
-	} catch (error) {
-		console.error(error);
-		throw error;
-	}
+	const data = await sysUtils.mem();
+	return data.total;
 }

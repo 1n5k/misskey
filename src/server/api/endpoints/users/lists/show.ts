@@ -1,6 +1,8 @@
-import $ from 'cafy'; import ID, { transform } from '../../../../../misc/cafy-id';
-import UserList, { pack } from '../../../../../models/user-list';
+import $ from 'cafy';
+import { ID } from '../../../../../misc/cafy-id';
 import define from '../../../define';
+import { ApiError } from '../../../error';
+import { UserLists } from '../../../../../models';
 
 export const meta = {
 	desc: {
@@ -8,28 +10,43 @@ export const meta = {
 		'en-US': 'Show a user list.'
 	},
 
+	tags: ['lists', 'account'],
+
 	requireCredential: true,
 
-	kind: 'account-read',
+	kind: 'read:account',
 
 	params: {
 		listId: {
 			validator: $.type(ID),
-			transform: transform,
+		},
+	},
+
+	res: {
+		type: 'object' as const,
+		optional: false as const, nullable: false as const,
+		ref: 'UserList',
+	},
+
+	errors: {
+		noSuchList: {
+			message: 'No such list.',
+			code: 'NO_SUCH_LIST',
+			id: '7bc05c21-1d7a-41ae-88f1-66820f4dc686'
 		},
 	}
 };
 
-export default define(meta, (ps, me) => new Promise(async (res, rej) => {
+export default define(meta, async (ps, me) => {
 	// Fetch the list
-	const userList = await UserList.findOne({
-		_id: ps.listId,
-		userId: me._id,
+	const userList = await UserLists.findOne({
+		id: ps.listId,
+		userId: me.id,
 	});
 
 	if (userList == null) {
-		return rej('list not found');
+		throw new ApiError(meta.errors.noSuchList);
 	}
 
-	res(await pack(userList));
-}));
+	return await UserLists.pack(userList);
+});

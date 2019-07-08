@@ -1,11 +1,15 @@
 <template>
 <component class="dmtdnykelhudezerjlfpbhgovrgnqqgr"
 	:is="link ? 'a' : 'button'"
-	:class="[styl, { inline, primary }]"
+	:class="{ inline, primary, wait, round: $store.state.device.roundedCorners }"
 	:type="type"
 	@click="$emit('click')"
+	@mousedown="onMousedown"
 >
-	<slot></slot>
+	<div ref="ripples" class="ripples"></div>
+	<div class="content">
+		<slot></slot>
+	</div>
 </component>
 </template>
 
@@ -38,12 +42,65 @@ export default Vue.extend({
 			type: Boolean,
 			required: false,
 			default: false
+		},
+		autofocus: {
+			type: Boolean,
+			required: false,
+			default: false
+		},
+		wait: {
+			type: Boolean,
+			required: false,
+			default: false
+		},
+	},
+	mounted() {
+		if (this.autofocus) {
+			this.$nextTick(() => {
+				this.$el.focus();
+			});
 		}
 	},
-	data() {
-		return {
-			styl: 'fill'
-		};
+	methods: {
+		onMousedown(e: MouseEvent) {
+			function distance(p, q) {
+				const sqrt = Math.sqrt, pow = Math.pow;
+				return sqrt(pow(p.x - q.x, 2) + pow(p.y - q.y, 2));
+			}
+
+			function calcCircleScale(boxW, boxH, circleCenterX, circleCenterY) {
+				const origin = {x: circleCenterX, y: circleCenterY};
+				const dist1 = distance({x: 0, y: 0}, origin);
+				const dist2 = distance({x: boxW, y: 0}, origin);
+				const dist3 = distance({x: 0, y: boxH}, origin);
+				const dist4 = distance({x: boxW, y: boxH }, origin);
+				return Math.max(dist1, dist2, dist3, dist4) * 2;
+			}
+
+			const rect = e.target.getBoundingClientRect();
+
+			const ripple = document.createElement('div');
+			ripple.style.top = (e.clientY - rect.top - 1).toString() + 'px';
+			ripple.style.left = (e.clientX - rect.left - 1).toString() + 'px';
+
+			this.$refs.ripples.appendChild(ripple);
+
+			const circleCenterX = e.clientX - rect.left;
+			const circleCenterY = e.clientY - rect.top;
+
+			const scale = calcCircleScale(e.target.clientWidth, e.target.clientHeight, circleCenterX, circleCenterY);
+
+			setTimeout(() => {
+				ripple.style.transform = 'scale(' + (scale / 2) + ')';
+			}, 1);
+			setTimeout(() => {
+				ripple.style.transition = 'all 1s ease';
+				ripple.style.opacity = '0';
+			}, 1000);
+			setTimeout(() => {
+				if (this.$refs.ripples) this.$refs.ripples.removeChild(ripple);
+			}, 2000);
+		}
 	}
 });
 </script>
@@ -56,16 +113,41 @@ export default Vue.extend({
 	padding 8px 10px
 	text-align center
 	font-weight normal
-	font-size 16px
+	font-size 14px
+	line-height 24px
 	border none
-	border-radius 6px
 	outline none
 	box-shadow none
 	text-decoration none
 	user-select none
+	color var(--text)
+	background var(--buttonBg)
+
+	&.round
+		border-radius 6px
+
+	&:not(:disabled):hover
+		background var(--buttonHoverBg)
+
+	&:not(:disabled):active
+		background var(--buttonActiveBg)
+
+	&.primary
+		color var(--primaryForeground)
+		background var(--primary)
+
+		&:not(:disabled):hover
+			background var(--primaryLighten5)
+
+		&:not(:disabled):active
+			background var(--primaryDarken5)
 
 	*
 		pointer-events none
+		user-select none
+
+	&:disabled
+		opacity 0.7
 
 	&:focus
 		&:after
@@ -77,7 +159,9 @@ export default Vue.extend({
 			bottom -5px
 			left -5px
 			border 2px solid var(--primaryAlpha03)
-			border-radius 10px
+
+	&.round:focus:after
+		border-radius 10px
 
 	&:not(.inline) + .dmtdnykelhudezerjlfpbhgovrgnqqgr
 		margin-top 16px
@@ -85,38 +169,57 @@ export default Vue.extend({
 	&.inline
 		display inline-block
 		width auto
+		min-width 100px
 
 	&.primary
 		font-weight bold
 
-	&.fill
-		color var(--text)
-		background var(--buttonBg)
+	&.wait
+		background linear-gradient(
+			45deg,
+			var(--primaryDarken10) 25%,
+			var(--primary)              25%,
+			var(--primary)              50%,
+			var(--primaryDarken10) 50%,
+			var(--primaryDarken10) 75%,
+			var(--primary)              75%,
+			var(--primary)
+		)
+		background-size 32px 32px
+		animation stripe-bg 1.5s linear infinite
+		opacity 0.7
+		cursor wait
 
-		&:hover
-			background var(--buttonHoverBg)
+		@keyframes stripe-bg
+			from {background-position: 0 0;}
+			to   {background-position: -64px 32px;}
 
-		&:active
-			background var(--buttonActiveBg)
+	> .ripples
+		position absolute
+		z-index 0
+		top 0
+		left 0
+		width 100%
+		height 100%
+		overflow hidden
 
-		&.primary
-			color var(--primaryForeground)
-			background var(--primary)
+		>>> div
+			position absolute
+			width 2px
+			height 2px
+			border-radius 100%
+			background rgba(0, 0, 0, 0.1)
+			opacity 1
+			transform scale(1)
+			transition all 0.5s cubic-bezier(0, .5, .5, 1)
 
-			&:hover
-				background var(--primaryLighten5)
+	&.round > .ripples
+		border-radius 6px
 
-			&:active
-				background var(--primaryDarken5)
+	&.primary > .ripples >>> div
+		background rgba(0, 0, 0, 0.15)
 
-	&:not(.fill)
-		color var(--primary)
-		background none
-
-		&:hover
-			color var(--primaryDarken5)
-
-		&:active
-			background var(--primaryAlpha03)
+	> .content
+		z-index 1
 
 </style>

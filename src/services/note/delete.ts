@@ -1,81 +1,70 @@
-import Note, { INote } from '../../models/note';
-import { IUser, isLocalUser } from '../../models/user';
-import { publishNoteStream } from '../../stream';
+import { publishNoteStream } from '../stream';
 import renderDelete from '../../remote/activitypub/renderer/delete';
-import pack from '../../remote/activitypub/renderer';
+import { renderActivity } from '../../remote/activitypub/renderer';
 import { deliver } from '../../queue';
-import Following from '../../models/following';
 import renderTombstone from '../../remote/activitypub/renderer/tombstone';
-import notesChart from '../../chart/notes';
-import perUserNotesChart from '../../chart/per-user-notes';
 import config from '../../config';
-import NoteUnread from '../../models/note-unread';
-import read from './read';
-import DriveFile from '../../models/drive-file';
+import { registerOrFetchInstanceDoc } from '../register-or-fetch-instance-doc';
+import { User } from '../../models/entities/user';
+import { Note } from '../../models/entities/note';
+import { Notes, Users, Followings, Instances } from '../../models';
+import { notesChart, perUserNotesChart, instanceChart } from '../chart';
 
 /**
  * 投稿を削除します。
  * @param user 投稿者
  * @param note 投稿
  */
-export default async function(user: IUser, note: INote) {
+export default async function(user: User, note: Note, quiet = false) {
 	const deletedAt = new Date();
 
-	await Note.update({
-		_id: note._id,
-		userId: user._id
-	}, {
-		$set: {
-			deletedAt: deletedAt,
-			text: null,
-			tags: [],
-			fileIds: [],
-			poll: null,
-			geo: null,
-			cw: null
-		}
+	await Notes.delete({
+		id: note.id,
+		userId: user.id
 	});
 
-	publishNoteStream(note._id, 'deleted', {
-		deletedAt: deletedAt
-	});
+	if (note.renoteId) {
+		Notes.decrement({ id: note.renoteId }, 'renoteCount', 1);
+		Notes.decrement({ id: note.renoteId }, 'score', 1);
+	}
 
-	// この投稿が関わる未読通知を削除
-	NoteUnread.find({
-		noteId: note._id
-	}).then(unreads => {
-		unreads.forEach(unread => {
-			read(unread.userId, unread.noteId);
+	if (!quiet) {
+		publishNoteStream(note.id, 'deleted', {
+			deletedAt: deletedAt
 		});
-	});
 
-	// ファイルが添付されていた場合ドライブのファイルの「このファイルが添付された投稿一覧」プロパティからこの投稿を削除
-	if (note.fileIds) {
-		note.fileIds.forEach(fileId => {
-			DriveFile.update({ _id: fileId }, {
-				$pull: {
-					'metadata.attachedNoteIds': note._id
-				}
+		//#region ローカルの投稿なら削除アクティビティを配送
+		if (Users.isLocalUser(user)) {
+			const content = renderActivity(renderDelete(renderTombstone(`${config.url}/notes/${note.id}`), user));
+
+			const queue: string[] = [];
+
+			const followers = await Followings.find({
+				followeeId: note.userId
 			});
-		});
+
+			for (const following of followers) {
+				if (Followings.isRemoteFollower(following)) {
+					const inbox = following.followerSharedInbox || following.followerInbox;
+					if (!queue.includes(inbox)) queue.push(inbox);
+				}
+			}
+
+			for (const inbox of queue) {
+				deliver(user as any, content, inbox);
+			}
+		}
+		//#endregion
+
+		// 統計を更新
+		notesChart.update(note, false);
+		perUserNotesChart.update(user, note, false);
+
+		if (Users.isRemoteUser(user)) {
+			registerOrFetchInstanceDoc(user.host).then(i => {
+				Instances.decrement({ id: i.id }, 'notesCount', 1);
+				instanceChart.updateNote(i.host, note, false);
+			});
+		}
 	}
-
-	//#region ローカルの投稿なら削除アクティビティを配送
-	if (isLocalUser(user)) {
-		const content = pack(renderDelete(renderTombstone(`${config.url}/notes/${note._id}`), user));
-
-		const followings = await Following.find({
-			followeeId: user._id,
-			'_follower.host': { $ne: null }
-		});
-
-		followings.forEach(following => {
-			deliver(user, content, following._follower.inbox);
-		});
-	}
-	//#endregion
-
-	// 統計を更新
-	notesChart.update(note, false);
-	perUserNotesChart.update(user, note, false);
 }

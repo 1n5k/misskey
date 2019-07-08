@@ -1,16 +1,16 @@
 <template>
 <div class="mkw-rss">
-	<mk-widget-container :show-header="!props.compact">
-		<template slot="header"><fa icon="rss-square"/>RSS</template>
-		<button slot="func" title="設定" @click="setting"><fa icon="cog"/></button>
+	<ui-container :show-header="!props.compact">
+		<template #header><fa icon="rss-square"/>RSS</template>
+		<template #func><button title="設定" @click="setting"><fa icon="cog"/></button></template>
 
 		<div class="mkw-rss--body" :data-mobile="platform == 'mobile'">
-			<p class="fetching" v-if="fetching"><fa icon="spinner .pulse" fixed-width/>{{ $t('@.loading') }}<mk-ellipsis/></p>
+			<p class="fetching" v-if="fetching"><fa icon="spinner" pulse fixed-width/>{{ $t('@.loading') }}<mk-ellipsis/></p>
 			<div class="feed" v-else>
-				<a v-for="item in items" :href="item.link" target="_blank">{{ item.title }}</a>
+				<a v-for="item in items" :href="item.link" rel="nofollow noopener" target="_blank" :title="item.title">{{ item.title }}</a>
 			</div>
 		</div>
-	</mk-widget-container>
+	</ui-container>
 </div>
 </template>
 
@@ -22,7 +22,7 @@ export default define({
 	name: 'rss',
 	props: () => ({
 		compact: false,
-		url: 'http://news.yahoo.co.jp/pickup/rss.xml'
+		url: 'http://feeds.afpbb.com/rss/afpbb/afpbbnews'
 	})
 }).extend({
 	i18n: i18n(),
@@ -55,12 +55,18 @@ export default define({
 			});
 		},
 		setting() {
-			const url = window.prompt('URL', this.props.url);
-			if (url && url != '') {
+			this.$root.dialog({
+				title: 'URL',
+				input: {
+					type: 'url',
+					default: this.props.url
+				}
+			}).then(({ canceled, result: url }) => {
+				if (canceled) return;
 				this.props.url = url;
 				this.save();
 				this.fetch();
-			}
+			});
 		}
 	}
 });
@@ -77,7 +83,10 @@ export default define({
 				display block
 				padding 4px 0
 				color var(--text)
-				border-bottom dashed 1px var(--faceDivider)
+				border-bottom dashed var(--lineWidth) var(--faceDivider)
+				white-space nowrap
+				text-overflow ellipsis
+				overflow hidden
 
 				&:last-child
 					border-bottom none
@@ -86,7 +95,7 @@ export default define({
 			margin 0
 			padding 16px
 			text-align center
-			color #aaa
+			color var(--text)
 
 			> [data-icon]
 				margin-right 4px
