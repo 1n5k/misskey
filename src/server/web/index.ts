@@ -5,7 +5,7 @@
 import * as os from 'os';
 import ms = require('ms');
 import * as Koa from 'koa';
-import * as Router from 'koa-router';
+import * as Router from '@koa/router';
 import * as send from 'koa-send';
 import * as favicon from 'koa-favicon';
 import * as views from 'koa-views';
@@ -13,7 +13,6 @@ import * as views from 'koa-views';
 import docs from './docs';
 import packFeed from './feed';
 import { fetchMeta } from '../../misc/fetch-meta';
-import * as pkg from '../../../package.json';
 import { genOpenapiSpec } from '../api/openapi/gen-spec';
 import config from '../../config';
 import { Users, Notes, Emojis, UserProfiles, Pages } from '../../models';
@@ -32,12 +31,13 @@ const app = new Koa();
 app.use(views(__dirname + '/views', {
 	extension: 'pug',
 	options: {
+		version: config.version,
 		config
 	}
 }));
 
 // Serve favicon
-app.use(favicon(`${client}/assets/favicon.ico`));
+app.use(favicon(`${client}/assets/favicon.png`));
 
 // Common request handler
 app.use(async (ctx, next) => {
@@ -102,7 +102,8 @@ const getFeed = async (acct: string) => {
 	const { username, host } = parseAcct(acct);
 	const user = await Users.findOne({
 		usernameLower: username.toLowerCase(),
-		host
+		host,
+		isSuspended: false
 	});
 
 	return user && await packFeed(user);
@@ -146,23 +147,33 @@ router.get('/@:user.json', async ctx => {
 
 //#region for crawlers
 // User
-router.get('/@:user', async (ctx, next) => {
+router.get(['/@:user', '/@:user/:sub'], async (ctx, next) => {
 	const { username, host } = parseAcct(ctx.params.user);
 	const user = await Users.findOne({
 		usernameLower: username.toLowerCase(),
-		host
+		host,
+		isSuspended: false
 	});
 
 	if (user != null) {
 		const profile = await UserProfiles.findOne(user.id).then(ensure);
 		const meta = await fetchMeta();
+		const me = profile.fields
+			? profile.fields
+				.filter(filed => filed.value != null && filed.value.match(/^https?:/))
+				.map(field => field.value)
+			: [];
+
 		await ctx.render('user', {
-			user, profile,
-			instanceName: meta.name || 'Misskey'
+			user, profile, me,
+			sub: ctx.params.sub,
+			instanceName: meta.name || 'Misskey',
+			icon: meta.iconUrl
 		});
-		ctx.set('Cache-Control', 'public, max-age=180');
+		ctx.set('Cache-Control', 'public, max-age=30');
 	} else {
 		// リモートユーザーなので
+		// モデレータがAPI経由で参照可能にするために404にはしない
 		await next();
 	}
 });
@@ -170,7 +181,8 @@ router.get('/@:user', async (ctx, next) => {
 router.get('/users/:user', async ctx => {
 	const user = await Users.findOne({
 		id: ctx.params.user,
-		host: null
+		host: null,
+		isSuspended: false
 	});
 
 	if (user == null) {
@@ -191,7 +203,8 @@ router.get('/notes/:note', async ctx => {
 		await ctx.render('note', {
 			note: _note,
 			summary: getNoteSummary(_note),
-			instanceName: meta.name || 'Misskey'
+			instanceName: meta.name || 'Misskey',
+			icon: meta.iconUrl
 		});
 
 		if (['public', 'home'].includes(note.visibility)) {
@@ -248,7 +261,7 @@ router.get('/info', async ctx => {
 		where: { host: null }
 	});
 	await ctx.render('info', {
-		version: pkg.version,
+		version: config.version,
 		machine: os.hostname(),
 		os: os.platform(),
 		node: process.version,
@@ -277,6 +290,7 @@ router.get('*', async ctx => {
 	await ctx.render('base', {
 		img: meta.bannerUrl,
 		title: meta.name || 'Misskey',
+		instanceName: meta.name || 'Misskey',
 		desc: meta.description,
 		icon: meta.iconUrl
 	});

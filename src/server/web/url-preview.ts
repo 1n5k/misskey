@@ -8,7 +8,7 @@ import { query } from '../../prelude/url';
 
 const logger = new Logger('url-preview');
 
-module.exports = async (ctx: Koa.BaseContext) => {
+module.exports = async (ctx: Koa.Context) => {
 	const meta = await fetchMeta();
 
 	logger.info(meta.summalyProxy
@@ -22,6 +22,7 @@ module.exports = async (ctx: Koa.BaseContext) => {
 				url: ctx.query.url,
 				lang: ctx.query.lang || 'ja-JP'
 			},
+			forever: true,
 			json: true
 		}) : await summaly(ctx.query.url, {
 			followRedirects: false,

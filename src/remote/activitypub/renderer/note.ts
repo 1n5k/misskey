@@ -12,10 +12,12 @@ import { Emoji } from '../../../models/entities/emoji';
 import { Poll } from '../../../models/entities/poll';
 import { ensure } from '../../../prelude/ensure';
 
-export default async function renderNote(note: Note, dive = true): Promise<any> {
-	const promisedFiles: Promise<DriveFile[]> = note.fileIds.length > 0
-		? DriveFiles.find({ id: In(note.fileIds) })
-		: Promise.resolve([]);
+export default async function renderNote(note: Note, dive = true, isTalk = false): Promise<any> {
+	const getPromisedFiles = async (ids: string[]) => {
+		if (!ids || ids.length === 0) return [];
+		const items = await DriveFiles.find({ id: In(ids) });
+		return ids.map(id => items.find(item => item.id === id)).filter(item => item != null) as DriveFile[];
+	};
 
 	let inReplyTo;
 	let inReplyToNote: Note | undefined;
@@ -81,7 +83,7 @@ export default async function renderNote(note: Note, dive = true): Promise<any> 
 	const hashtagTags = (note.tags || []).map(tag => renderHashtag(tag));
 	const mentionTags = mentionedUsers.map(u => renderMention(u));
 
-	const files = await promisedFiles;
+	const files = await getPromisedFiles(note.fileIds);
 
 	let text = note.text;
 	let poll: Poll | undefined;
@@ -90,14 +92,11 @@ export default async function renderNote(note: Note, dive = true): Promise<any> 
 		poll = await Polls.findOne({ noteId: note.id });
 	}
 
-	let question: string | undefined;
 	if (poll) {
 		if (text == null) text = '';
 		const url = `${config.url}/notes/${note.id}`;
 		// TODO: i18n
 		text += `\n[リモートで結果を表示](${url})`;
-
-		question = `${config.url}/questions/${note.id}`;
 	}
 
 	let apText = text;
@@ -148,6 +147,10 @@ export default async function renderNote(note: Note, dive = true): Promise<any> 
 		}))
 	} : {};
 
+	const asTalk = isTalk ? {
+		_misskey_talk: true
+	} : {};
+
 	return {
 		id: `${config.url}/notes/${note.id}`,
 		type: 'Note',
@@ -156,15 +159,16 @@ export default async function renderNote(note: Note, dive = true): Promise<any> 
 		content,
 		_misskey_content: text,
 		_misskey_quote: quote,
-		_misskey_question: question,
+		quoteUrl: quote,
 		published: note.createdAt.toISOString(),
 		to,
 		cc,
 		inReplyTo,
 		attachment: files.map(renderDocument),
-		sensitive: files.some(file => file.isSensitive),
+		sensitive: note.cw != null || files.some(file => file.isSensitive),
 		tag,
-		...asPoll
+		...asPoll,
+		...asTalk
 	};
 }
 

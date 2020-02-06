@@ -47,6 +47,14 @@ import { UserSecurityKey } from '../models/entities/user-security-key';
 import { AttestationChallenge } from '../models/entities/attestation-challenge';
 import { Page } from '../models/entities/page';
 import { PageLike } from '../models/entities/page-like';
+import { ModerationLog } from '../models/entities/moderation-log';
+import { UsedUsername } from '../models/entities/used-username';
+import { Announcement } from '../models/entities/announcement';
+import { AnnouncementRead } from '../models/entities/announcement-read';
+import { Clip } from '../models/entities/clip';
+import { ClipNote } from '../models/entities/clip-note';
+import { Antenna } from '../models/entities/antenna';
+import { AntennaNote } from '../models/entities/antenna-note';
 
 const sqlLogger = dbLogger.createSubLogger('sql', 'white', false);
 
@@ -83,6 +91,8 @@ class MyCustomLogger implements Logger {
 }
 
 export const entities = [
+	Announcement,
+	AnnouncementRead,
 	Meta,
 	Instance,
 	App,
@@ -99,6 +109,7 @@ export const entities = [
 	UserGroupInvite,
 	UserNotePining,
 	UserSecurityKey,
+	UsedUsername,
 	AttestationChallenge,
 	Following,
 	FollowRequest,
@@ -124,16 +135,23 @@ export const entities = [
 	RegistrationTicket,
 	MessagingMessage,
 	Signin,
+	ModerationLog,
+	Clip,
+	ClipNote,
+	Antenna,
+	AntennaNote,
 	ReversiGame,
 	ReversiMatching,
 	...charts as any
 ];
 
-export function initDb(justBorrow = false, sync = false, log = false) {
-	try {
-		const conn = getConnection();
-		return Promise.resolve(conn);
-	} catch (e) {}
+export function initDb(justBorrow = false, sync = false, log = false, forceRecreate = false) {
+	if (!forceRecreate) {
+		try {
+			const conn = getConnection();
+			return Promise.resolve(conn);
+		} catch (e) {}
+	}
 
 	return createConnection({
 		type: 'postgres',
@@ -151,7 +169,7 @@ export function initDb(justBorrow = false, sync = false, log = false) {
 				host: config.redis.host,
 				port: config.redis.port,
 				password: config.redis.pass,
-				prefix: config.redis.prefix,
+				prefix: `${config.redis.prefix}:query:`,
 				db: config.redis.db || 0
 			}
 		} : false,
