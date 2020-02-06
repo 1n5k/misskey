@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as request from 'request';
 import config from '../config';
-import chalk from 'chalk';
+import * as chalk from 'chalk';
 import Logger from '../services/logger';
 
 export async function downloadUrl(url: string, path: string) {
@@ -29,6 +29,7 @@ export async function downloadUrl(url: string, path: string) {
 			url: new URL(url).href, // https://github.com/syuilo/misskey/issues/2637
 			proxy: config.proxy,
 			timeout: 10 * 1000,
+			forever: true,
 			headers: {
 				'User-Agent': config.userAgent
 			}

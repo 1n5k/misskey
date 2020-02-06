@@ -68,7 +68,7 @@ cp docker_example.env docker.env
 *5.* データベースを初期化
 ----------------------------------------------------------------
 ``` shell
-docker-compose run --rm web npm run init
+docker-compose run --rm web yarn run init
 ```
 
 *6.* 以上です！
@@ -89,7 +89,7 @@ docker-compose run --rm web npm run init
 
 ### cliコマンドを実行する方法:
 
-`docker-compose run --rm web node cli/mark-admin @example`
+`docker-compose run --rm web node built/tools/mark-admin @example`
 
 ----------------------------------------------------------------
 

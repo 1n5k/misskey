@@ -7,12 +7,11 @@ import * as path from 'path';
 import * as showdown from 'showdown';
 import 'showdown-highlightjs-extension';
 import ms = require('ms');
-import * as Router from 'koa-router';
+import * as Router from '@koa/router';
 import * as send from 'koa-send';
 import * as glob from 'glob';
 import config from '../../config';
 import { licenseHtml } from '../../misc/license';
-import { copyright } from '../../const.json';
 import * as locales from '../../../locales';
 import * as nestedProperty from 'nested-property';
 
@@ -48,7 +47,7 @@ async function genVars(lang: string): Promise<{ [key: string]: any }> {
 
 	vars['config'] = config;
 
-	vars['copyright'] = copyright;
+	vars['copyright'] = '(c) Misskey';
 
 	vars['license'] = licenseHtml;
 

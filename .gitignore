@@ -1,14 +1,13 @@
 # Visual Studio Code
 /.vscode
+!/.vscode/extensions.json
 
 # Intelij-IDEA
 /.idea
 
 # Node.js
 /node_modules
-
-# yarn
-yarn.lock
+report.*.json
 
 # config
 /.config/*
@@ -32,3 +31,10 @@ api-docs.json
 .DS_Store
 /files
 ormconfig.json
+
+# blender backups
+*.blend1
+*.blend2
+*.blend3
+*.blend4
+*.blend5

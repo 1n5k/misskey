@@ -33,6 +33,7 @@ export const meta = {
 		state: {
 			validator: $.optional.str.or([
 				'all',
+				'available',
 				'admin',
 				'moderator',
 				'adminOrModerator',
@@ -49,6 +50,16 @@ export const meta = {
 				'remote',
 			]),
 			default: 'local'
+		},
+
+		username: {
+			validator: $.optional.str,
+			default: null
+		},
+
+		hostname: {
+			validator: $.optional.str,
+			default: null
 		}
 	}
 };
@@ -57,6 +68,7 @@ export default define(meta, async (ps, me) => {
 	const query = Users.createQueryBuilder('user');
 
 	switch (ps.state) {
+		case 'available': query.where('user.isSuspended = FALSE'); break;
 		case 'admin': query.where('user.isAdmin = TRUE'); break;
 		case 'moderator': query.where('user.isModerator = TRUE'); break;
 		case 'adminOrModerator': query.where('user.isAdmin = TRUE OR isModerator = TRUE'); break;
@@ -68,6 +80,14 @@ export default define(meta, async (ps, me) => {
 	switch (ps.origin) {
 		case 'local': query.andWhere('user.host IS NULL'); break;
 		case 'remote': query.andWhere('user.host IS NOT NULL'); break;
+	}
+
+	if (ps.username) {
+		query.andWhere('user.usernameLower like :username', { username: ps.username.toLowerCase() + '%' });
+	}
+
+	if (ps.hostname) {
+		query.andWhere('user.host like :hostname', { hostname: '%' + ps.hostname.toLowerCase() + '%' });
 	}
 
 	switch (ps.sort) {

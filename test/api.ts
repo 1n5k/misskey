@@ -2,10 +2,10 @@
  * Tests of API
  *
  * How to run the tests:
- * > mocha test/api.ts --require ts-node/register
+ * > npx mocha test/api.ts --require ts-node/register
  *
  * To specify test:
- * > mocha test/api.ts --require ts-node/register -g 'test name'
+ * > npx mocha test/api.ts --require ts-node/register -g 'test name'
  *
  * If the tests not start, try set following enviroment variables:
  * TS_NODE_FILES=true and TS_NODE_TRANSPILE_ONLY=true
@@ -472,6 +472,20 @@ describe('API', () => {
 			assert.strictEqual(res.status, 200);
 			assert.strictEqual(typeof res.body === 'object' && !Array.isArray(res.body), true);
 			assert.strictEqual(res.body.name, 'Lenna.png');
+		}));
+
+		it('ファイルに名前を付けられる', async(async () => {
+			const alice = await signup({ username: 'alice' });
+
+			const res = await assert.request(server)
+				.post('/drive/files/create')
+				.field('i', alice.token)
+				.field('name', 'Belmond.png')
+				.attach('file', fs.readFileSync(__dirname + '/resources/Lenna.png'), 'Lenna.png');
+
+			expect(res).have.status(200);
+			expect(res.body).be.a('object');
+			expect(res.body).have.property('name').eql('Belmond.png');
 		}));
 
 		it('ファイル無しで怒られる', async(async () => {
